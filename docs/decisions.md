@@ -105,15 +105,16 @@ reports success.
 
 ## ADR-8: `shape` and the extra `graphics.py` templates are not implemented in this contract
 
-**Decision**: `shape`, `chapter`, `progress`, `countdown` are declared in
-`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`. (`bug` was in this list
-too until ADR-11 implemented it — this ADR's rationale below still applies to the three that remain unsupported.)
+**Decision**: `shape`, `progress`, `countdown` are declared in
+`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`. (`bug` and `chapter`
+were in this list too, until ADR-11/ADR-12 implemented them — this ADR's rationale below still applies to the two
+that remain unsupported.)
 
 **Why**: `shape` has no typed delegate (drawing an arbitrary rectangle/shape without a raw filter string is not
-exposed by any ffmpeg-skill tool today). `chapter`/`progress`/`countdown` do exist as `ffmpeg-skill/graphics`
-templates, but STEP 1's requested minimum for this first Skill is title, lower third, text overlay, and
-image/logo overlay; STEP 9 forbids publishing an operation as supported before it has a working renderer and
-tests. They are natural candidates for a follow-up PR each, the same way `bug` was (ADR-11).
+exposed by any ffmpeg-skill tool today). `progress`/`countdown` do exist as `ffmpeg-skill/graphics` templates, but
+STEP 1's requested minimum for this first Skill is title, lower third, text overlay, and image/logo overlay;
+STEP 9 forbids publishing an operation as supported before it has a working renderer and tests. They are natural
+candidates for a follow-up PR each, the same way `bug` and `chapter` were (ADR-11/ADR-12).
 
 ## ADR-10: `provides` publishes cross-repository Capability ids, with `text_overlay` and `image_overlay` sharing one id
 
@@ -164,3 +165,37 @@ handling gained one new check (`enum` membership, mirroring the check `_animatio
 parameters) rather than a new branch; the agent's own `_typed()` for `"string"` already checks `enum` the same
 way, so this needed no changes on that side at all, and was verified compatible without editing
 `video-production-agent`.
+
+## ADR-12: `chapter` is implemented; it exposes `primary_color`, not `text_color`
+
+**Decision**: `chapter` (a small chip in a corner, e.g. `"Part 2 -- Setup"`, `ffmpeg-skill/graphics --template
+chapter`) is implemented and removed from `UNSUPPORTED_ELEMENT_TYPES`, the same follow-up ADR-8 anticipated. It
+shares its argv construction with `bug` in `executor._argv()` (both are `ffmpeg-skill/graphics`'s
+`elif args.template in ("chapter", "bug")` branch, taking the same `--title`/`--position` shape), gets the same
+`builtin_fade` animation, and its own capability id `motion_graphics.chapter` (added to `contract.CAPABILITY_IDS`,
+provisional for the same reason `motion_graphics.bug` is -- ADR-11).
+
+**Why `primary_color`, not `text_color`, and why default position differs from `bug`**: reading
+`ffmpeg-skill/graphics.py`'s shared `chapter`/`bug` branch line by line (not assumed to mirror `bug` by analogy)
+shows the two templates are *not* symmetric in which color each accepts:
+
+```python
+pos = args.position or ("bottom-left" if args.template == "chapter" else "top-right")
+box_color = ff_color(primary if args.template == "chapter" else bg, ...)
+txt_color = ff_color(bg if args.template == "chapter" else text_c)
+```
+
+For `chapter`: the default position is `bottom-left` (not `bug`'s `top-right`); the chip's *box* color comes from
+`--primary`/brand primary (`args.primary`); the chip's *text* color is always the brand background color,
+completely unaffected by `--text-color` -- `args.text_color` is read into `text_c`, but `text_c` is only used in
+the `else` (i.e. `bug`) branch. So `chapter`'s typed parameters are `title`/`position`/`primary_color`, deliberately
+*not* `text_color` -- exposing a `text_color` parameter that silently has zero effect on the rendered output would
+be exactly the kind of dishonest metadata this Skill's contract is designed never to publish (`model.py` module
+docstring: "never guess, never silently repair, never claim support that isn't backed by a real renderer").
+`test_chapter_has_no_text_color_parameter` in `tests/test_unit.py` pins this down as a regression test (a
+`text_color` key on a `chapter` element must be rejected as an unknown parameter, not silently accepted and
+ignored).
+
+Verified end-to-end the same way as ADR-11: `video-production-agent`'s pinned `check_contract()` and
+`RealSkillTests`, and the ecosystem registry's `validate_provides_entry()`, all still pass with `chapter` added
+(see `CLAUDE.md`'s reproduction recipe).

@@ -1,9 +1,9 @@
 # motion-graphics-skill
 
 Deterministic motion-graphics **rendering execution** Skill for the AI Video Production Ecosystem. It renders a
-typed, already-decided Graphics Document — titles, lower thirds, free-form text overlays, image/logo overlays, and
-persistent corner "bug" watermarks — onto a video, through [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill),
-and reports provenance.
+typed, already-decided Graphics Document — titles, lower thirds, free-form text overlays, image/logo overlays,
+persistent corner "bug" watermarks, and chapter chips — onto a video, through
+[ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill), and reports provenance.
 
 It is **not** an AI agent. It never decides what to show, when to show it, or how it should look; it never
 accepts or constructs an arbitrary ffmpeg filter, shell command, or expression.
@@ -90,13 +90,19 @@ generated list:
 | `text_overlay` | `ffmpeg-skill/overlay --text` | none, or a configurable `fade` |
 | `image_overlay` | `ffmpeg-skill/overlay --image` | none, or a configurable `fade` |
 | `bug` | `ffmpeg-skill/graphics --template bug` | fixed 0.3s fade in/out (not configurable) |
+| `chapter` | `ffmpeg-skill/graphics --template chapter` | fixed 0.3s fade in/out (not configurable) |
 
 `bug` is a persistent text watermark in one of the four corners (e.g. `"LIVE"` or `"@handle"`) — its `position` is
 a closed vocabulary of just those four corners (`top-left`/`top-right`/`bottom-left`/`bottom-right`), a strict
 subset of the 9-way `position` type `text_overlay`/`image_overlay` use, because ffmpeg-skill/graphics's `bug`
 template has no `{x, y}` support at all.
 
-`shape`, `chapter`, `progress`, and `countdown` are intentionally **not implemented** in this contract (see
+`chapter` is a small chip in a corner (e.g. `"Part 2 — Setup"`) — same closed-vocabulary `position` as `bug`
+(default `bottom-left` instead of `bug`'s `top-right`), but its overridable color is `primary_color` (the chip's
+background), not `text_color`: ffmpeg-skill/graphics's `chapter` branch always draws chip text in the brand
+background color regardless of any color override, so `text_color` is not an accepted parameter for `chapter`.
+
+`shape`, `progress`, and `countdown` are intentionally **not implemented** in this contract (see
 `unsupported_element_types` in the contract, and STEP 24 of the design brief) — they are not published as
 supported by `doctor`/`contract` because there is no working renderer behind them yet.
 
@@ -170,9 +176,9 @@ guess which one it's looking at.
 `provides` lists this Skill's element types by their cross-repository Capability id: `title` ->
 `motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, both `text_overlay` and
 `image_overlay` -> `motion_graphics.overlay` (they share one id — that matrix already treats free-form text and
-image/logo overlay as one capability, not two), and `bug` -> `motion_graphics.bug` (this repository's own
-provisional id — that matrix predates `bug`'s implementation here, see `docs/decisions.md` ADR-11). Each entry
-also carries its `tool_id` (always
+image/logo overlay as one capability, not two), and `bug` -> `motion_graphics.bug` / `chapter` ->
+`motion_graphics.chapter` (this repository's own provisional ids — that matrix predates both element types'
+implementation here, see `docs/decisions.md` ADR-11/ADR-12). Each entry also carries its `tool_id` (always
 `motion-graphics/run`, this Skill's one execution tool) and a `lifecycle`. This anticipates
 `kajisho5/AI-video-production-OS`'s Capability registry (`docs/CAPABILITY_MATRIX.md`, `registry/contract.py`, as
 of this writing on that repository's not-yet-merged architecture branch, not its `main`), so a registry can

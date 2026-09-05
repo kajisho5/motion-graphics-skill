@@ -8,7 +8,7 @@ from motion_graphics.fonts import DEFAULT_FONT_ID, FONT_REGISTRY, resolve_font
 from motion_graphics.model import ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES, parse_request
 from motion_graphics.security import PathPolicy, check_filename
 
-from conftest import bug_element, request_doc, text_overlay_element, title_element
+from conftest import bug_element, chapter_element, request_doc, text_overlay_element, title_element
 
 
 # ---- request parsing / structure
@@ -185,6 +185,49 @@ def test_bug_rejects_xy_position_object():
 
 def test_bug_does_not_accept_configurable_animation():
     d = request_doc([{**bug_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "UNSUPPORTED_OPERATION"
+
+
+# ---- chapter
+def test_chapter_parses_with_default_position():
+    doc = parse_request(request_doc([chapter_element()]))
+    assert doc.elements[0].type == "chapter"
+    assert doc.elements[0].parameters["title"] == "Part 2"
+    assert doc.elements[0].parameters["position"] == "bottom-left"
+
+
+def test_chapter_accepts_a_corner_position():
+    doc = parse_request(request_doc([chapter_element(position="top-right")]))
+    assert doc.elements[0].parameters["position"] == "top-right"
+
+
+@pytest.mark.parametrize("bad", ["top", "center", "middle", ""])
+def test_chapter_rejects_a_non_corner_position(bad):
+    d = request_doc([chapter_element(position=bad)])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_chapter_has_no_text_color_parameter():
+    # Unlike `bug`, `chapter`'s exposed color is `primary_color` (the chip background); ffmpeg-skill/graphics's
+    # chapter branch always uses the brand background for text, so `text_color` would silently do nothing --
+    # it must not even be an accepted parameter name.
+    d = request_doc([chapter_element(text_color="red")])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_chapter_accepts_primary_color():
+    doc = parse_request(request_doc([chapter_element(primary_color="00FF00")]))
+    assert doc.elements[0].parameters["primary_color"] == "00FF00"
+
+
+def test_chapter_does_not_accept_configurable_animation():
+    d = request_doc([{**chapter_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
     with pytest.raises(MotionGraphicsError) as e:
         parse_request(d)
     assert e.value.code == "UNSUPPORTED_OPERATION"
