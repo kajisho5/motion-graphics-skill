@@ -7,6 +7,42 @@ typed, already-decided Graphics Document — titles, lower thirds, free-form tex
 It is **not** an AI agent. It never decides what to show, when to show it, or how it should look; it never
 accepts or constructs an arbitrary ffmpeg filter, shell command, or expression.
 
+## Quick start
+
+Requires Python 3.9+ and a working `ffmpeg`/`ffprobe` on `PATH`, plus a checkout of
+[`ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill) (see [`docs/ffmpeg-skill.md`](docs/ffmpeg-skill.md) for
+how it's located).
+
+```bash
+pip install -e .
+motion-graphics doctor --json --ffmpeg-skill /path/to/ffmpeg-skill   # confirm the environment first
+```
+
+A request document (`document.video`/`document.output` are always required; every element needs a unique `id`):
+
+```json
+{
+  "schema": "motion-graphics/request@1",
+  "video": {"path": "input.mp4"},
+  "output": {"path": "out/output.mp4"},
+  "elements": [
+    {"id": "title1", "type": "title", "start": 0, "end": 3, "parameters": {"title": "Episode 12", "subtitle": "The math of video"}},
+    {"id": "logo1", "type": "image_overlay", "start": 0, "end": 999, "parameters": {"image_path": "logo.png", "position": "top-right"},
+     "animation": {"kind": "fade", "parameters": {"duration": 1.0}}}
+  ]
+}
+```
+
+```bash
+motion-graphics validate request.json --json     # structural check only, touches no files
+motion-graphics plan request.json --json --workspace .        # dry run: resolves/probes inputs, writes no media
+motion-graphics run request.json --json --workspace .         # renders, returns output path + sha256 + provenance
+```
+
+Every command prints exactly one JSON document on stdout and a non-zero exit code from a fixed table on failure
+(`motion-graphics contract --json` → `errors.exit_codes`) — see [Contract / agent integration](#contract--agent-integration)
+below for how a caller is expected to use these.
+
 ## Responsibility boundary
 
 ```
@@ -102,6 +138,27 @@ Graphics Document (typed, validated)
 This skill **never** accepts or builds a raw ffmpeg filter/`filter_complex`/command/argv/shell/executable/env from
 a request — those field names are rejected recursively anywhere in the request document
 (`FORBIDDEN_KEYS` in `model.py`).
+
+## Contract / agent integration
+
+`motion-graphics contract --json` (alias `skill --json`) is generated from the same tables the code runs on
+(`model.ELEMENT_TYPES`, `model.ANIMATION_KINDS`, `errors.ERROR_TABLE`) — nothing in it is hand-maintained, so it
+can never claim support the renderer doesn't actually have. A caller (`video-production-agent` or otherwise)
+should:
+
+1. Run `contract --json` once; check `element_types`/`animations` against what the request needs, and
+   `unsupported_element_types`/`unsupported_animations` for anything it must not ask for.
+2. Run `doctor --json` to confirm the environment: every capability is `supported` / `unsupported` / `unknown`
+   (never a guess — `unknown` means "not detected either way, verified per run instead").
+3. `validate` a request first (structural only, no file access) if the caller built it programmatically.
+4. `plan` (or `run --dry-run`) to resolve and probe inputs without writing media, if it wants to catch a missing
+   asset/font or an out-of-range timeline before committing to a render.
+5. `run`, and read `error.code` + `error.retryable` on failure (`contract.errors`) rather than parsing messages —
+   `TOOL_ERROR`/`CANCELLED` are safe to retry as-is; every other code means the request itself needs to change.
+
+`validate`, `plan`, and `run` return different top-level keys (`validation`, `plan`, and `output`/`operations`
+respectively) — `contract.response.success` documents all three shapes individually so a caller never has to
+guess which one it's looking at.
 
 ## Security
 

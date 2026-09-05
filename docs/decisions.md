@@ -88,6 +88,12 @@ enter an identity.
 that machine-specific data not leak into artifact identity. Two workspaces with the same video content and the
 same specification, but different absolute paths, must produce the same identity and the same cache hits.
 
+**Scope note**: `document_id` (the `.motion-graphics/<document_id>/` folder name) is hashed from the *raw* request
+(unresolved asset paths, no `crf`/`preset`) -- it only needs to be a stable folder name, not a trust boundary, so
+two unrelated documents sharing one by coincidence is harmless: every file inside is still named by its own full
+per-stage identity (which *does* include the resolved sha256, font, `crf`, and `preset`, per stage above), and
+`_reusable()` re-verifies that file's actual sha256 against its manifest before ever trusting it as a cache hit.
+
 ## ADR-7: Unknown font / missing asset is a hard failure, never a silent substitution
 
 **Decision**: an unrecognised `font_id` is `MISSING_INPUT`; a `font_file`/`image_path` that does not resolve is

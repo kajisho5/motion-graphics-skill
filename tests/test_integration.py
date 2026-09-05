@@ -247,6 +247,25 @@ def test_cli_validate_does_not_require_workspace_or_media(tmp_path):
     assert not list(tmp_path.iterdir())  # touched no files
 
 
+def test_response_shapes_match_contract_documentation(skill_dir, workspace):
+    from motion_graphics.contract import skill_contract
+    documented = skill_contract()["response"]["success"]
+
+    doc = request_doc([title_element()])
+    code, out, err = run_cli(["validate", "-", "--json"], stdin_text=json.dumps(doc), cwd=str(workspace))
+    validate_resp = one_json(out)
+    assert set(documented["validate"]) <= set(validate_resp) | {"note"}
+
+    code, out, err = run_cli(["plan", "-", "--json", "--workspace", str(workspace), "--ffmpeg-skill", str(skill_dir)], stdin_text=json.dumps(doc))
+    plan_resp = one_json(out)
+    assert set(documented["plan"]) <= set(plan_resp) | {"note"}
+
+    doc2 = request_doc([title_element()], output="out/shapes.mp4")
+    code, out, err = run_cli(["run", "-", "--json", "--workspace", str(workspace), "--ffmpeg-skill", str(skill_dir)], stdin_text=json.dumps(doc2))
+    run_resp = one_json(out)
+    assert set(documented["run"]) <= set(run_resp)
+
+
 def test_doctor_cli_against_real_skill(skill_dir):
     code, out, err = run_cli(["doctor", "--json", "--ffmpeg-skill", str(skill_dir)])
     doc = one_json(out)

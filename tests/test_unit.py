@@ -335,3 +335,186 @@ def test_check_filename_rejects_unsafe_names(name):
 @pytest.mark.parametrize("name", ["a.mp4", "out.png", "my-file_v2.ttf"])
 def test_check_filename_accepts_safe_names(name):
     check_filename(name)  # must not raise
+
+
+# ---- doctor: pure capability/element-type/animation status logic (no ffmpeg-skill needed; regression coverage
+# for two precision bugs found in review: a reliably-absent filter must read "unsupported" not "unknown", and an
+# animation's status must reflect every element type it actually applies to, not just one of them)
+from motion_graphics.doctor import animation_status, capability_status, element_type_status  # noqa: E402
+
+
+def test_capability_reliably_absent_filter_is_unsupported_not_unknown():
+    skill_info = type("Info", (), {"supported": True})()
+    # ffmpeg-skill reliably detected filters (several are present) AND positively lists filter:drawtext in
+    # "missing" -- it actually checked for this one and confirmed it absent, not merely undetected.
+    ffdoc = {"ffmpeg": "6.0.0", "ffprobe": "6.0.0", "available": ["filter:overlay", "filter:scale", "encoder:libx264", "encoder:aac"],
+             "missing": ["filter:drawtext"], "unknown": []}
+    caps = capability_status(skill_info, ffdoc)
+    assert caps["filter:drawtext"] == "unsupported"
+
+
+def test_capability_unreliable_filter_detection_is_unknown():
+    skill_info = type("Info", (), {"supported": True})()
+    # No filter: entries at all in "available" -> ffmpeg-skill's filter detection itself is unreliable here
+    # (e.g. FFmpeg 8+ output format it cannot parse), so an undetected filter is "unknown", not "unsupported",
+    # even if (mistakenly, given the unreliable detection) it were also listed in "missing".
+    ffdoc = {"ffmpeg": "8.0.0", "ffprobe": "8.0.0", "available": ["encoder:libx264", "encoder:aac"], "missing": ["filter:drawtext"], "unknown": []}
+    caps = capability_status(skill_info, ffdoc)
+    assert caps["filter:drawtext"] == "unknown"
+
+
+def test_capability_missing_encoder_is_unsupported():
+    skill_info = type("Info", (), {"supported": True})()
+    ffdoc = {"ffmpeg": "6.0.0", "ffprobe": "6.0.0", "available": ["filter:drawtext"], "missing": ["encoder:aac"], "unknown": []}
+    caps = capability_status(skill_info, ffdoc)
+    assert caps["encoder:aac"] == "unsupported"
+
+
+def test_capability_not_tracked_by_ffmpeg_skill_at_all_is_unknown_not_unsupported():
+    # Regression: ffmpeg-skill's own doctor only tracks capabilities *its own* tools need. Core filters this
+    # skill needs (overlay, drawbox, color, scale, colorchannelmixer) are common enough that ffmpeg-skill never
+    # mentions them in available/missing/unknown at all -- absence-from-available alone must never be read as
+    # "confirmed unsupported" (it previously was, incorrectly, until this was caught by manually inspecting a
+    # real doctor run against a real ffmpeg-skill checkout).
+    skill_info = type("Info", (), {"supported": True})()
+    ffdoc = {"ffmpeg": "6.1.1", "ffprobe": "6.1.1", "available": ["filter:drawtext", "filter:loudnorm", "encoder:libx264", "encoder:aac"], "missing": [], "unknown": []}
+    caps = capability_status(skill_info, ffdoc)
+    assert caps["filter:overlay"] == "unknown"
+    assert caps["filter:drawbox"] == "unknown"
+    assert caps["filter:color"] == "unknown"
+    assert caps["filter:scale"] == "unknown"
+    assert caps["filter:colorchannelmixer"] == "unknown"
+    assert caps["filter:drawtext"] == "supported"
+
+
+def test_animation_status_reflects_worst_of_every_applicable_element_type():
+    # fade applies to both text_overlay and image_overlay (model.ELEMENT_TYPES); if either is unsupported the
+    # animation itself must be reported unsupported, not just reflect text_overlay's own status.
+    fully_supported = {t: {"status": "supported"} for t in ELEMENT_TYPES}
+    assert animation_status(fully_supported)["fade"]["status"] == "supported"
+
+    image_overlay_broken = dict(fully_supported, image_overlay={"status": "unsupported"})
+    assert animation_status(image_overlay_broken)["fade"]["status"] == "unsupported"
+
+    text_overlay_unknown = dict(fully_supported, text_overlay={"status": "unknown"})
+    assert animation_status(text_overlay_unknown)["fade"]["status"] == "unknown"
+
+
+def test_animation_status_applies_to_matches_contract():
+    from motion_graphics.contract import animation_specs
+    fully_supported = {t: {"status": "supported"} for t in ELEMENT_TYPES}
+    doctor_applies_to = sorted(animation_status(fully_supported)["fade"]["applies_to"])
+    contract_applies_to = sorted(next(a["applies_to"] for a in animation_specs() if a["kind"] == "fade"))
+    assert doctor_applies_to == contract_applies_to == ["image_overlay", "text_overlay"]
+
+
+def test_element_type_status_escalates_to_worst_required_capability():
+    caps = {"ffmpeg-skill": "supported", "ffmpeg": "supported", "ffprobe": "supported",
+            "filter:drawtext": "supported", "filter:drawbox": "unsupported", "encoder:libx264": "supported"}
+    statuses = element_type_status(caps)
+    assert statuses["title"]["status"] == "unsupported"
+    assert "filter:drawbox" in statuses["title"]["missing"]
+
+
+# ---- executor: ADR-9 regression -- a custom font_file must render with cwd set to its own directory and a bare
+# file name, never a full path, on every platform (not just the Windows build where the original bug appeared)
+from motion_graphics.executor import Executor  # noqa: E402
+from motion_graphics.fonts import ResolvedFont  # noqa: E402
+from motion_graphics.model import parse_request as _parse_request  # noqa: E402
+
+
+def _text_overlay_element_obj(**extra):
+    doc = _parse_request(request_doc([text_overlay_element(**extra)]))
+    return doc.elements[0]
+
+
+def test_argv_for_custom_font_file_uses_bare_name_and_sets_cwd(tmp_path):
+    ex = Executor(PathPolicy(str(tmp_path)), skill=None)
+    font_dir = tmp_path / "somewhere" / "nested"
+    font_dir.mkdir(parents=True)
+    font_path = font_dir / "MyFont.ttf"
+    font_path.write_bytes(b"not a real font, just needs to exist for the path")
+    font = ResolvedFont("file", None, "MyFont", {}, font_file_hash="deadbeef", font_file_path=str(font_path))
+
+    el = _text_overlay_element_obj(text="hi")
+    tool, argv, cwd = ex._argv(el, "in.mp4", "out.mp4", None, font, crf=18, preset="medium")
+
+    assert tool == "overlay"
+    assert cwd == str(font_dir)
+    i = argv.index("--font-file")
+    font_arg = argv[i + 1]
+    assert font_arg == "MyFont.ttf"
+    assert "/" not in font_arg and "\\" not in font_arg and ":" not in font_arg
+
+
+def test_argv_for_system_font_sets_no_cwd():
+    ex = Executor(PathPolicy("."), skill=None)
+    font = ResolvedFont("system", DEFAULT_FONT_ID, "DejaVu Sans", {"font": "DejaVu Sans"})
+    el = _text_overlay_element_obj(text="hi")
+    tool, argv, cwd = ex._argv(el, "in.mp4", "out.mp4", None, font, crf=18, preset="medium")
+    assert cwd is None
+    assert "--font" in argv and "DejaVu Sans" in argv
+
+
+def test_argv_for_title_never_sets_cwd():
+    ex = Executor(PathPolicy("."), skill=None)
+    doc = _parse_request(request_doc([title_element()]))
+    tool, argv, cwd = ex._argv(doc.elements[0], "in.mp4", "out.mp4", None, None, crf=18, preset="medium")
+    assert tool == "graphics"
+    assert cwd is None
+
+
+# ---- deterministic identity (STEP 13 / review section 7): same input -> same identity, and every field the
+# spec says matters (asset content, font choice, animation) actually changes it. Pure -- no ffmpeg-skill needed.
+def _image_overlay_element_obj(**extra):
+    doc = _parse_request(request_doc([{"id": "img1", "type": "image_overlay", "start": 0, "end": 2, "parameters": {"image_path": "logo.png", **extra}}]))
+    return doc.elements[0]
+
+
+def test_identity_parameters_never_contain_a_raw_path():
+    el = _image_overlay_element_obj()
+    asset = {"sha256": "a" * 64, "size": 123}
+    params = Executor._identity_parameters(el, asset, None)
+    assert params["image_path"] == {"sha256": "a" * 64, "size": 123}
+    assert "logo.png" not in str(params)
+
+
+def test_identity_parameters_differ_for_different_image_content():
+    el = _image_overlay_element_obj()
+    params_a = Executor._identity_parameters(el, {"sha256": "a" * 64, "size": 100}, None)
+    params_b = Executor._identity_parameters(el, {"sha256": "b" * 64, "size": 100}, None)
+    assert stable_hash(params_a) != stable_hash(params_b)
+
+
+def test_identity_parameters_differ_for_different_font():
+    el = _text_overlay_element_obj(text="hi")
+    font_a = ResolvedFont("system", "system:dejavu-sans", "DejaVu Sans", {"font": "DejaVu Sans"})
+    font_b = ResolvedFont("system", "system:dejavu-serif", "DejaVu Serif", {"font": "DejaVu Serif"})
+    params_a = Executor._identity_parameters(el, None, font_a)
+    params_b = Executor._identity_parameters(el, None, font_b)
+    assert stable_hash(params_a) != stable_hash(params_b)
+
+
+def test_identity_parameters_same_content_same_hash():
+    el = _text_overlay_element_obj(text="hi")
+    font = ResolvedFont("system", DEFAULT_FONT_ID, "DejaVu Sans", {"font": "DejaVu Sans"})
+    params_a = Executor._identity_parameters(el, None, font)
+    params_b = Executor._identity_parameters(el, None, font)
+    assert stable_hash(params_a) == stable_hash(params_b)
+
+
+def test_stage_identity_differs_for_different_animation():
+    base = {"skill_version": "0.1.0", "tool_versions": {}, "index": 0, "previous": "x", "type": "text_overlay",
+            "start": 0.0, "end": 2.0, "parameters": {}, "crf": 18, "preset": "medium"}
+    no_fade = stable_hash({**base, "animation": None})
+    fade_1s = stable_hash({**base, "animation": {"kind": "fade", "parameters": {"duration": 1.0}}})
+    fade_2s = stable_hash({**base, "animation": {"kind": "fade", "parameters": {"duration": 2.0}}})
+    assert len({no_fade, fade_1s, fade_2s}) == 3  # all three distinct
+
+
+def test_stage_identity_chains_to_previous_stage():
+    base = {"skill_version": "0.1.0", "tool_versions": {}, "index": 1, "type": "title", "start": 0.0, "end": 2.0,
+            "animation": None, "parameters": {}, "crf": 18, "preset": "medium"}
+    from_a = stable_hash({**base, "previous": "identity-of-stage-a"})
+    from_b = stable_hash({**base, "previous": "identity-of-stage-b"})
+    assert from_a != from_b  # a document that differs only in an earlier stage must not collide downstream

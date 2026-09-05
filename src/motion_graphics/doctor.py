@@ -45,18 +45,53 @@ def capability_status(skill_info: Optional[Any], ffdoc: Dict[str, Any]) -> Dict[
     status["ffmpeg"] = "supported" if ff_ok else "unsupported"
     status["ffprobe"] = "supported" if fp_ok else "unsupported"
     available = set(ffdoc.get("available") or [])
-    unknown = set(ffdoc.get("unknown") or [])
+    missing = set(ffdoc.get("missing") or []) | set(ffdoc.get("missing_optional") or [])
     filters_unreliable = ff_ok and not any(c.startswith("filter:") for c in available)
     for cap in CORE_CAPABILITIES:
         if not ff_ok:
             status[cap] = "unsupported"
         elif cap in available:
             status[cap] = "supported"
-        elif cap in unknown or (cap.startswith("filter:") and filters_unreliable):
-            status[cap] = "unknown"
+        elif cap in missing and not (cap.startswith("filter:") and filters_unreliable):
+            # ffmpeg-skill positively checked for this one and confirmed it absent -- not merely undetected.
+            status[cap] = "unsupported"
         else:
-            status[cap] = "unsupported" if cap.startswith("encoder:") else "unknown"
+            # Neither positively confirmed present nor positively confirmed absent: either ffmpeg-skill's own
+            # detection failed for it (in `unknown`, or filter detection broke wholesale), or -- just as likely --
+            # ffmpeg-skill's doctor simply never checks this specific capability at all (it tracks only the
+            # capabilities *its own* tools need; core filters like overlay/scale/drawbox that no ffmpeg-skill tool
+            # happens to name are never mentioned in `available`, `missing`, or `unknown`). Either way this skill
+            # cannot tell from doctor alone, so it says so rather than guessing "unsupported" -- verified per run.
+            status[cap] = "unknown"
     return status
+
+
+_STATUS_RANK = {"supported": 0, "unknown": 1, "unsupported": 2}
+
+
+def element_type_status(caps: Dict[str, str]) -> Dict[str, Any]:
+    """element type -> {status, tool, required_capabilities, missing, unknown}. Pure function of a capability map,
+    so it is unit-testable without a real ffmpeg-skill checkout."""
+    element_types: Dict[str, Any] = {}
+    for etype, spec in ELEMENT_TYPES.items():
+        need = spec["required_capabilities"]
+        st = "unsupported" if any(caps.get(c) == "unsupported" for c in need) else ("unknown" if any(caps.get(c) == "unknown" for c in need) else "supported")
+        element_types[etype] = {"status": st, "tool": f"ffmpeg-skill/{spec['tool']}", "required_capabilities": need,
+                                "missing": [c for c in need if caps.get(c) == "unsupported"], "unknown": [c for c in need if caps.get(c) == "unknown"]}
+    return element_types
+
+
+def animation_status(element_types: Dict[str, Any]) -> Dict[str, Any]:
+    """animation kind -> {status, applies_to}. An animation's status is the worst of every element type it
+    actually applies to (contract.animation_specs() computes the same "applies_to" set from the same table):
+    "fade" is useless in practice if the element type it would attach to can't render at all."""
+    animations: Dict[str, Any] = {}
+    for kind in ANIMATION_KINDS:
+        applies_to = [t for t, s in ELEMENT_TYPES.items() if s.get("animation") == "configurable"]
+        statuses = [element_types[t]["status"] for t in applies_to if t in element_types]
+        worst = max(statuses, key=lambda s: _STATUS_RANK[s]) if statuses else "unknown"
+        animations[kind] = {"status": worst, "applies_to": applies_to}
+    return animations
 
 
 def font_status() -> Dict[str, Any]:
@@ -108,15 +143,10 @@ def doctor_report(ffmpeg_skill_dir: Optional[str] = None, workspace: Optional[st
     else:
         checks["filter_detection"] = {"status": "ok" if ffdoc.get("ffmpeg") else "unknown", "detail": "filters detected by ffmpeg-skill doctor" if ffdoc.get("ffmpeg") else "ffmpeg not available"}
 
-    element_types: Dict[str, Any] = {}
-    for etype, spec in ELEMENT_TYPES.items():
-        need = spec["required_capabilities"]
-        st = "unsupported" if any(caps.get(c) == "unsupported" for c in need) else ("unknown" if any(caps.get(c) == "unknown" for c in need) else "supported")
-        element_types[etype] = {"status": st, "tool": f"ffmpeg-skill/{spec['tool']}", "required_capabilities": need,
-                                "missing": [c for c in need if caps.get(c) == "unsupported"], "unknown": [c for c in need if caps.get(c) == "unknown"]}
+    element_types = element_type_status(caps)
     checks["element_types"] = element_types
     checks["unsupported_element_types"] = dict(UNSUPPORTED_ELEMENT_TYPES)
-    checks["animations"] = {k: {"status": element_types.get("text_overlay", {}).get("status", "unknown")} for k in ANIMATION_KINDS}
+    checks["animations"] = animation_status(element_types)
     checks["unsupported_animations"] = dict(UNSUPPORTED_ANIMATIONS)
     checks["fonts"] = font_status()
 

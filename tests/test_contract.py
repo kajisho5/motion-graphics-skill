@@ -60,6 +60,17 @@ def test_contract_every_element_type_names_a_delegate_tool():
         assert t["tool"].startswith("ffmpeg-skill/")
 
 
+def test_contract_documents_all_three_response_shapes():
+    # An agent parsing only the contract must be able to tell `run`, `plan` (dry-run), and `validate` responses
+    # apart -- they have different top-level keys, and only `run`'s shape was documented before this check existed.
+    c = skill_contract()
+    shapes = c["response"]["success"]
+    assert set(shapes) == {"run", "plan", "validate"}
+    assert "output" in shapes["run"] and "operations" in shapes["run"]
+    assert "plan" in shapes["plan"] and "output" not in shapes["plan"]
+    assert "validation" in shapes["validate"] and "output" not in shapes["validate"]
+
+
 def test_contract_forbidden_fields_present():
     c = skill_contract()
     for key in ("filter", "filter_complex", "shell", "command", "argv", "executable", "env"):
