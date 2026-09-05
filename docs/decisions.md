@@ -105,14 +105,15 @@ reports success.
 
 ## ADR-8: `shape` and the extra `graphics.py` templates are not implemented in this contract
 
-**Decision**: `shape`, `chapter`, `bug`, `progress`, `countdown` are declared in
-`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`.
+**Decision**: `shape`, `chapter`, `progress`, `countdown` are declared in
+`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`. (`bug` was in this list
+too until ADR-11 implemented it — this ADR's rationale below still applies to the three that remain unsupported.)
 
 **Why**: `shape` has no typed delegate (drawing an arbitrary rectangle/shape without a raw filter string is not
-exposed by any ffmpeg-skill tool today). `chapter`/`bug`/`progress`/`countdown` do exist as `ffmpeg-skill/graphics`
+exposed by any ffmpeg-skill tool today). `chapter`/`progress`/`countdown` do exist as `ffmpeg-skill/graphics`
 templates, but STEP 1's requested minimum for this first Skill is title, lower third, text overlay, and
 image/logo overlay; STEP 9 forbids publishing an operation as supported before it has a working renderer and
-tests. They are natural candidates for a follow-up PR (see README "next PR candidates" in the final report).
+tests. They are natural candidates for a follow-up PR each, the same way `bug` was (ADR-11).
 
 ## ADR-10: `provides` publishes cross-repository Capability ids, with `text_overlay` and `image_overlay` sharing one id
 
@@ -134,3 +135,32 @@ merged spec ever assigns different ids. `text_overlay` and `image_overlay` share
 that matrix already treats them as one capability ("free-form text, image/logo overlay"), not two — `title` and
 `lower_third` each keep their own built-in-template id. Additive: a new top-level key derived from `ELEMENT_TYPES`,
 saying nothing `element_types[]` doesn't already say, only indexed by Capability id instead of element type.
+
+## ADR-11: `bug` is implemented; its `position` is a closed-vocabulary `string`, not a new parameter type
+
+**Decision**: `bug` (a persistent text watermark in one of four corners, `ffmpeg-skill/graphics --template bug`) is
+implemented and removed from `UNSUPPORTED_ELEMENT_TYPES`, per ADR-8's own "natural candidate for a follow-up PR"
+note. It gets a `builtin_fade` animation (the same fixed 0.3s alpha fade `title` uses) and three parameters:
+`title` (required), `position` (optional, default `top-right`), `text_color` (optional). Its capability id is
+`motion_graphics.bug`, added to `contract.CAPABILITY_IDS` (ADR-10).
+
+**Why not a full `position` type**: ffmpeg-skill/graphics's `--position` for `bug` is an argparse `choices` of
+exactly four corner names (`top-left`/`top-right`/`bottom-left`/`bottom-right`) — no `{x, y}` support at all,
+unlike `text_overlay`/`image_overlay`'s 9-way `position` type (which also accepts an explicit pixel offset).
+Reusing the `position` type as-is would silently accept values (`"top"`, `"center"`, `{"x": .., "y": ..}`) that
+`ffmpeg-skill/graphics` itself would then reject with an argparse error — a `TOOL_ERROR` surfaced from a
+downstream process failure instead of a clean `INVALID_REQUEST` at the request boundary, and exactly the kind of
+gap STEP 19/20's "verify, don't assume" principle warns against letting through unvalidated.
+
+**Why not a new parameter type**: the obvious fix looked like a new `corner_position` parameter type, but
+`video-production-agent`'s pinned `MotionGraphicsAdapter.check_contract()` hard-rejects any parameter whose
+`type` is not in its own fixed `PARAMETER_TYPES` tuple (`string`, `integer`, `number`, `boolean`, `color`,
+`position`, `font`, `path`) — introducing a new type would have made the *entire* contract incompatible with the
+already-shipped agent-side integration (confirmed by actually running that repository's pinned compatibility
+checks against a live contract with a `corner_position` type: `check_contract()` produced errors where before, and
+after this ADR's approach, it produces none — see `CLAUDE.md`'s reproduction recipe). Instead, `position` here is
+declared as `{"type": "string", "enum": CORNER_POSITION_NAMES}`: `model._element()`'s existing generic `string`
+handling gained one new check (`enum` membership, mirroring the check `_animation()` already did for animation
+parameters) rather than a new branch; the agent's own `_typed()` for `"string"` already checks `enum` the same
+way, so this needed no changes on that side at all, and was verified compatible without editing
+`video-production-agent`.

@@ -32,6 +32,9 @@ FORBIDDEN_KEYS = frozenset({
 })
 
 POSITION_NAMES = ("top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right")
+# ffmpeg-skill/graphics's "bug" template takes only a corner --position (argparse choices, no {x,y}); a strict
+# subset of POSITION_NAMES, not the full 9-way position `text_overlay`/`image_overlay` support.
+CORNER_POSITION_NAMES = ("top-left", "top-right", "bottom-left", "bottom-right")
 
 MAX_TEXT_LENGTH = 500
 MAX_TITLE_LENGTH = 200
@@ -103,14 +106,29 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:overlay", "filter:scale", "filter:colorchannelmixer", "encoder:libx264"],
     },
+    "bug": {
+        "tool": "graphics", "template": "bug",
+        "description": "Persistent text bug in a corner (e.g. \"@handle\" or \"LIVE\"). Built-in 0.3s alpha fade in/out "
+                       "(ffmpeg-skill/graphics --template bug); not configurable per element.",
+        "animation": "builtin_fade",
+        "parameters": {
+            "title": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
+            # A closed-vocabulary string, not the `position` type: ffmpeg-skill/graphics's "bug" template takes
+            # only a corner name (argparse choices, no {x,y}) -- a strict subset of the 9-way `position` type
+            # `text_overlay`/`image_overlay` use, so it is expressed as `enum` on `string` (already a
+            # generically-handled shape) rather than inventing a new parameter type.
+            "position": {"type": _STR, "required": False, "default": "top-right", "enum": CORNER_POSITION_NAMES},
+            "text_color": {"type": _COLOR, "required": False},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
 # support they cannot back with a renderer (STEP 9).
 UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {
     "shape": "no typed delegate tool draws an arbitrary shape (position/size/color) without a raw ffmpeg filter string; needs a typed shape tool in ffmpeg-skill first",
-    "chapter": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay only)",
-    "bug": "same as chapter: template exists upstream, not exposed by this contract yet",
+    "chapter": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay, bug only)",
     "progress": "same as chapter: template exists upstream, not exposed by this contract yet",
     "countdown": "same as chapter: template exists upstream, not exposed by this contract yet",
 }
@@ -343,7 +361,10 @@ def _element(value: Any, index: int) -> GraphicsElement:
         raw = praw[name]
         where_p = f"{where}.parameters.{name}"
         if spec["type"] == _STR:
-            parameters[name] = _string(raw, where_p, max_length=spec.get("max_length"))
+            text = _string(raw, where_p, max_length=spec.get("max_length"))
+            if "enum" in spec and text not in spec["enum"]:
+                raise MotionGraphicsError("INVALID_REQUEST", f"{where_p} must be one of {spec['enum']}: {text!r}", {"field": where_p})
+            parameters[name] = text
         elif spec["type"] == _COLOR:
             parameters[name] = _color(raw, where_p)
         elif spec["type"] == _POS:

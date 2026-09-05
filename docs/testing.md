@@ -8,7 +8,7 @@ tests/
 ├── test_unit.py           -- model validation, timeline rules, canonical JSON / identity determinism, error table, PathPolicy, fonts
 ├── test_security.py       -- shell non-use, tool allowlist, forbidden-field rejection (incl. nested), path traversal / symlink escape, env allowlist, injection payloads as *content*
 ├── test_contract.py       -- contract <-> implementation consistency, contract/doctor are deterministic and valid JSON, skill == contract alias
-└── test_integration.py    -- real ffmpeg-skill + real media: title, lower_third, text_overlay, image_overlay, fade, multi-element pipelines, reuse + tamper detection, Unicode text, cancellation, CLI exit codes
+└── test_integration.py    -- real ffmpeg-skill + real media: title, lower_third, text_overlay, image_overlay, bug, fade, multi-element pipelines, reuse + tamper detection, Unicode text, cancellation, CLI exit codes
 ```
 
 Run everything:

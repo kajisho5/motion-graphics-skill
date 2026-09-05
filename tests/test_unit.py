@@ -8,7 +8,7 @@ from motion_graphics.fonts import DEFAULT_FONT_ID, FONT_REGISTRY, resolve_font
 from motion_graphics.model import ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES, parse_request
 from motion_graphics.security import PathPolicy, check_filename
 
-from conftest import request_doc, text_overlay_element, title_element
+from conftest import bug_element, request_doc, text_overlay_element, title_element
 
 
 # ---- request parsing / structure
@@ -148,6 +148,43 @@ def test_fade_duration_must_fit_in_element_window():
 @pytest.mark.parametrize("kind", sorted(UNSUPPORTED_ANIMATIONS))
 def test_unsupported_animation_kinds_rejected(kind):
     d = request_doc([{**text_overlay_element(start=0, end=4), "animation": {"kind": kind, "parameters": {}}}])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "UNSUPPORTED_OPERATION"
+
+
+# ---- bug
+def test_bug_parses_with_default_position():
+    doc = parse_request(request_doc([bug_element()]))
+    assert doc.elements[0].type == "bug"
+    assert doc.elements[0].parameters["title"] == "LIVE"
+    assert doc.elements[0].parameters["position"] == "top-right"
+
+
+def test_bug_accepts_a_corner_position():
+    doc = parse_request(request_doc([bug_element(position="bottom-left")]))
+    assert doc.elements[0].parameters["position"] == "bottom-left"
+
+
+@pytest.mark.parametrize("bad", ["top", "center", "middle", ""])
+def test_bug_rejects_a_non_corner_position(bad):
+    d = request_doc([bug_element(position=bad)])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_bug_rejects_xy_position_object():
+    # Unlike text_overlay/image_overlay's `position` type, bug's is a closed-vocabulary string: ffmpeg-skill/
+    # graphics's "bug" template has no {x,y} support at all (argparse choices only).
+    d = request_doc([bug_element(position={"x": 10, "y": 10})])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_bug_does_not_accept_configurable_animation():
+    d = request_doc([{**bug_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
     with pytest.raises(MotionGraphicsError) as e:
         parse_request(d)
     assert e.value.code == "UNSUPPORTED_OPERATION"

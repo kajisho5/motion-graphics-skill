@@ -228,10 +228,12 @@ class Executor:
                 argv += ["--title", p["title"]]
                 if p.get("subtitle"):
                     argv += ["--subtitle", p["subtitle"]]
-            else:  # lower_third
+            elif el.type == "lower_third":
                 argv += ["--name", p["name"]]
                 if p.get("title"):
                     argv += ["--title", p["title"]]
+            else:  # bug
+                argv += ["--title", p["title"], "--position", p["position"]]
             if p.get("text_color"):
                 argv += ["--text-color", p["text_color"]]
             if p.get("primary_color"):

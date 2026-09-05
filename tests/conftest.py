@@ -70,6 +70,10 @@ def image_overlay_element(element_id="img1", start=0.0, end=2.0, image_path="log
     return {"id": element_id, "type": "image_overlay", "start": start, "end": end, "parameters": {"image_path": image_path, **extra}}
 
 
+def bug_element(element_id="bug1", start=0.0, end=2.0, title="LIVE", **extra):
+    return {"id": element_id, "type": "bug", "start": start, "end": end, "parameters": {"title": title, **extra}}
+
+
 def run_cli(args, stdin_text=None, cwd=None):
     """Run the CLI in a subprocess (the real process boundary) and return (exit, stdout, stderr)."""
     import subprocess
