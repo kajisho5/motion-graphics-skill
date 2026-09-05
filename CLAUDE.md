@@ -4,49 +4,53 @@ Durable, repository-local notes for whichever Claude Code session picks this rep
 conversation history; trust this file, the code, the tests, and live CI/PR state — in that order. Re-verify
 anything here that looks stale before acting on it (dates are given so staleness is checkable).
 
-Last verified: 2026-09-05, against `main` @ `5d7faed` (PRs #1-#4 all merged, no open PRs, no open issues).
+Last verified: 2026-09-05, against `main` @ `01614c7` (PRs #1-#8 all merged, no open PRs, no open issues).
 
 ## What this repo is
 
-A deterministic motion-graphics **rendering execution** Skill (titles, lower thirds, text/image overlays, corner
-"bug" watermarks) on top of `ffmpeg-skill`, for the `kajisho5` AI Video Production ecosystem. It is not an AI
-agent and makes no design/timing/content decisions — see `README.md` and `SKILL.md` for the full boundary.
-Contract version `0.1.0` (unchanged since #1 — every change so far has been additive, see "Known limitations"
-below on when a version bump would actually be required).
+A deterministic motion-graphics **rendering execution** Skill on top of `ffmpeg-skill`, for the `kajisho5` AI
+Video Production ecosystem. It is not an AI agent and makes no design/timing/content decisions — see `README.md`
+and `SKILL.md` for the full boundary. Contract version `0.1.0` (unchanged since #1 — every change so far has been
+additive; see "Known limitations" for when a version bump would actually be required).
 
 ## Current state (verified, not assumed)
 
-- `main` (`5d7faed`) implements 5 element types (`title`, `lower_third`, `text_overlay`, `image_overlay`, `bug`),
-  the full `contract`/`doctor`/`validate`/`plan`/`run` CLI, PathPolicy, deterministic provenance, a `provides`
-  cross-repo Capability-id field, and 226 tests (unit/security/contract/integration, real-media E2E). CI green on
-  Ubuntu/macOS/Windows × Python 3.9/3.11.
-- **The actual downstream consumer already exists and was verified end-to-end, repeatedly**: `kajisho5/video-
-  production-agent` ships `src/video_agent/tools/motion_graphics/adapter.py` with a **pinned** `contract_0.1.0.json`
-  and a strict `check_contract()`/`contract_drift()` compatibility gate. Its full `tests/test_adapter_motion_graphics.py`
-  (21 tests, including `RealSkillTests` which spins up real `ffmpeg` and drives this Skill's actual CLI, not a
-  fake) passes 100% against this checkout, with **zero `check_contract()` errors**, both before and after adding
-  `provides` (#2) and `bug` (#4) — the new element type/field show up only as informational `contract_drift()`
-  entries (the agent's own pinned snapshot doesn't know about them yet), never a hard failure. This is the
-  strongest available evidence the contract stays correct — re-run it after any contract-shaping change (see
-  "How to re-verify OS/agent compatibility" below). **Do this before merging any future PR that touches
-  `contract.py`, `model.ELEMENT_TYPES`, or the request/response shape** — it would have caught a real
-  compatibility break during #4 (a new parameter type was tried first, found to break `check_contract()` outright,
-  and replaced with a `string`+`enum` shape instead; see ADR-11).
-- **`kajisho5/AI-video-production-OS`** (the "OS" repo named in ecosystem-wide prompts) still has, on its `main`
-  branch, only a placeholder README — no real architecture merged there yet, as of this writing. The substantive
-  architecture (Capability registry, `docs/CAPABILITY_MATRIX.md`, `docs/SPEC.md`, `registry/contract.py`
-  conformance checker, per-Skill `.provides` fixtures for several sibling Skills) lives on an **unmerged** branch
-  there, `claude/ai-video-production-os-arch-*` (branch suffix will change; find it with
-  `git ls-remote --heads https://github.com/kajisho5/AI-video-production-OS`). Treat anything from that repo as
-  provisional until it lands on `main` there — verify against the actual branch content, never assume a cited
+- `main` (`01614c7`) implements **8 element types**: `title`, `lower_third`, `text_overlay`, `image_overlay`,
+  `bug`, `chapter`, `progress`, `countdown` — every template `ffmpeg-skill/graphics` exposes, plus the two
+  `ffmpeg-skill/overlay` element types. The full `contract`/`doctor`/`validate`/`plan`/`run` CLI, PathPolicy,
+  deterministic provenance, an 8-entry `provides` cross-repo Capability-id field, and **258 tests**
+  (unit/security/contract/integration, real-media E2E). CI green on Ubuntu/macOS/Windows × Python 3.9/3.11.
+  **Only `shape` remains unimplemented** — and unlike the other four that were closed out this session
+  (`bug` #4, `chapter` #6, `progress` #7, `countdown` #8), it isn't a small follow-up: no `ffmpeg-skill` tool
+  exposes a typed shape-drawing delegate at all, so implementing it is blocked on `ffmpeg-skill` gaining one
+  first — out of this repository's authority to add (see ADR-8, rewritten in #8 to reflect this).
+- **The actual downstream consumer already exists and was verified end-to-end, repeatedly, after every single one
+  of the 8 PRs above**: `kajisho5/video-production-agent` ships
+  `src/video_agent/tools/motion_graphics/adapter.py` with a **pinned** `contract_0.1.0.json` and a strict
+  `check_contract()`/`contract_drift()` compatibility gate. Its full `tests/test_adapter_motion_graphics.py`
+  (21 tests, including `RealSkillTests`, which spins up real `ffmpeg` and drives this Skill's actual CLI, not a
+  fake) passed 100% against every intermediate state of this checkout, with **zero `check_contract()` errors**
+  throughout — new element types/fields show up only as informational `contract_drift()` entries (the agent's
+  pinned snapshot doesn't know about them yet), never a hard failure. This is the strongest available evidence
+  the contract stays correct. **Re-run this before merging any future PR that touches `contract.py`,
+  `model.ELEMENT_TYPES`, or the request/response shape** (see the recipe below) — it caught a real compatibility
+  break during #4 (a new parameter type broke `check_contract()` outright; solved with `string`+`enum` instead,
+  ADR-11) before it ever reached a PR.
+- **`kajisho5/AI-video-production-OS`** (the "OS" repo named in ecosystem-wide prompts) still had, as of last
+  check, only a placeholder README on its `main` branch — no real architecture merged there yet. The substantive
+  architecture (Capability registry, `docs/CAPABILITY_MATRIX.md`, `registry/contract.py` conformance checker)
+  lives on an **unmerged** branch there, `claude/ai-video-production-os-arch-*` (branch suffix will change; find
+  it with `git ls-remote --heads https://github.com/kajisho5/AI-video-production-OS`). Treat anything from that
+  repo as provisional until it lands on `main` — verify against the actual branch content, never assume a cited
   filename exists just because a PR description says so (this happened once already, in #2's original
-  description; corrected in `f2b7a91` before merge). Re-check whether it has merged to `main` yet before trusting
-  this paragraph.
-- **#2** (`provides` field) and **#4** (`bug` element type) are both merged. `contract.CAPABILITY_IDS` now has:
+  description; corrected in `f2b7a91` before merge). **Re-check whether it has merged to `main` yet** before
+  trusting this paragraph or the provisional ids below.
+- `contract.CAPABILITY_IDS` (all verified valid against the OS registry's `validate_provides_entry()`, all
+  matching the real, unmerged `docs/CAPABILITY_MATRIX.md` for the 4 element types it actually covers):
   `title` -> `motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, `text_overlay`/
-  `image_overlay` -> `motion_graphics.overlay` (verified against the real, unmerged-branch `docs/CAPABILITY_MATRIX.md`),
-  and `bug` -> `motion_graphics.bug` (this repository's **own provisional id** — that matrix predates `bug`'s
-  implementation and has no entry for it; reconcile if the OS side ever assigns a different one once merged).
+  `image_overlay` -> `motion_graphics.overlay` (matrix-verified), and `bug`/`chapter`/`progress`/`countdown` ->
+  `motion_graphics.{bug,chapter,progress,countdown}` (this repository's **own provisional ids** — that matrix
+  predates all four; reconcile if the OS side ever assigns different ones once merged).
 - No open GitHub issues or pull requests as of last check.
 
 ## How to re-verify OS/agent compatibility
@@ -97,38 +101,54 @@ type, a new top-level key), before merging.
 
 ## Known limitations (intentional, documented, not gaps to silently "fix")
 
-- `shape`/`chapter`/`progress`/`countdown` are still explicitly unsupported (`unsupported_element_types` in the
-  contract) — `ffmpeg-skill/graphics.py` has templates for `chapter`/`progress`/`countdown` (see its own
-  docstring/`TEMPLATES` list), and `shape` has no typed delegate at all anywhere upstream. STEP 9 of the original
-  design brief forbids publishing an operation as supported before it has a working renderer *and tests* here.
-  `bug` was in this same list until #4 implemented it the same way these three should be: model + contract +
-  doctor (automatic, derived) + real-media tests + docs, one element type per PR. Do this in this repo, never by
-  touching `ffmpeg-skill`.
-- Only one configurable animation (`fade`), only for `text_overlay`/`image_overlay`. `title`/`lower_third`/`bug`
-  each get a fixed, non-configurable built-in fade (or slide+fade for `lower_third`) instead. No slide/move/scale
-  as a configurable `Animation` — see `docs/decisions.md` ADR-2 for why, and do not add this without a working,
-  typed, parameterised delegate in `ffmpeg-skill` behind it (this Skill does not build its own filter expressions,
-  ever — see ADR-1).
-- The pinned agent-side contract is `0.1.0`. A **new element type or a new top-level key is safe** (verified
-  additive per the compatibility recipe above). A **new parameter `type`** (something other than `string`,
-  `integer`, `number`, `boolean`, `color`, `position`, `font`, `path`) is **not** safe — it breaks
-  `check_contract()` outright (learned the hard way while designing `bug`'s `position`; solved by expressing it as
-  `string` + `enum` instead — see ADR-11 before ever reaching for a new parameter type). Removing/renaming/
-  retyping an existing field is also breaking and needs a version bump plus a coordinated pinned-contract update
-  on the agent side (out of this repo's boundary — coordinate, don't just ship it here).
+- `shape` is the only unsupported element type left (`unsupported_element_types` in the contract). No
+  `ffmpeg-skill` tool draws an arbitrary shape (position/size/color) without this Skill building a raw filter
+  string itself, which is forbidden outright (ADR-1). Implementing it requires `ffmpeg-skill` to gain a typed
+  shape tool first — that is a change to a sibling repository, out of this repository's authority; do not attempt
+  to work around it by constructing filter strings here.
+- Every element type has a fixed, honestly-labeled `animation` value that is not `"configurable"`, except
+  `text_overlay`/`image_overlay` (the only two with a real, configurable `fade`): `title`/`bug`/`chapter` get
+  `"builtin_fade"`, `lower_third` gets `"builtin_slide_fade"`, `countdown` gets `"builtin_pulse"` (a genuinely
+  different animation — a per-digit alpha dip, not a fade), and `progress` gets `"none"` (it truly has no alpha
+  effect at all — verified by reading its filter chain, not assumed). No slide/move/scale as a *configurable*
+  `Animation` — see ADR-2 for why, and do not add one without a working, typed, parameterised delegate in
+  `ffmpeg-skill` behind it (this Skill never builds its own filter expressions — ADR-1).
+- The pinned agent-side contract is `0.1.0`. A **new element type, a new top-level key, or a new `animation`
+  string value is safe** (verified additive four times over, per the compatibility recipe above — `check_contract()`
+  never inspects the `animation` field's value at all). A **new parameter `type`** (something other than
+  `string`, `integer`, `number`, `boolean`, `color`, `position`, `font`, `path`) is **not** safe — it breaks
+  `check_contract()` outright (hit this once designing `bug`'s `position`; solved with `string` + `enum` instead
+  — read ADR-11 before ever reaching for a new parameter type). Removing/renaming/retyping an existing field is
+  also breaking and needs a version bump plus a coordinated pinned-contract update on the agent side (out of this
+  repository's boundary — coordinate, don't just ship it here).
+- Numeric-count parameters that could drive an unbounded per-element filter chain (`countdown.count_from`) are
+  bounded even where the underlying `ffmpeg-skill` tool itself places no limit (`[1, 60]`, ADR-14) — the same
+  class of concern `MAX_ELEMENTS` bounds for the request as a whole, applied at the single-element level. Apply
+  the same reasoning to any future element type with a similar "repeat N times" parameter.
 
 ## Next highest-value task (as of last check)
 
-1. Pick the next unsupported element type with an existing `ffmpeg-skill/graphics` template (`chapter`,
-   `progress`, or `countdown` — read `vendor/ffmpeg-skill/scripts/graphics.py`'s docstring/`TEMPLATES` for what
-   each actually needs) and implement it end-to-end the same way `bug` was in #4: model + contract (automatic) +
-   real-media tests with empirically-measured pixel-check crop windows (don't guess coordinates from the filter
-   expression alone -- render it and measure, as ADR-11's tests did) + docs + a new ADR. Small, additive, no new
-   external dependency. `progress`/`countdown` may need a moment's thought about what parameters make sense as a
-   typed `GraphicsElement` (e.g. `countdown`'s `--from` count) before assuming the shape mirrors `bug`'s.
-2. Watch `kajisho5/AI-video-production-OS`'s architecture branch for a merge to `main`; when it lands, diff this
-   repo's `provides`/`CAPABILITY_IDS` choices (especially the provisional `motion_graphics.bug`) against whatever
-   actually merged and reconcile if it differs.
-3. Do not invent OS integration machinery beyond what a *verified* sibling contract/registry actually reads (see
+The "implement every `ffmpeg-skill/graphics` template" arc (ADR-8) is **done** — `bug`, `chapter`, `progress`,
+`countdown` all shipped across #4/#6/#7/#8. There is no more low-hanging, purely-additive element-type work left
+in this repository; the next real gaps are cross-cutting, not "pick the next template":
+
+1. **`shape` is blocked here.** If a shape-drawing capability lands in `ffmpeg-skill` (check its
+   `scripts/graphics.py`/contract for a new template or tool), implement it the same way as the other four —
+   otherwise there is nothing to do on this front from this repository alone.
+2. **Watch `kajisho5/AI-video-production-OS`'s architecture branch for a merge to `main`.** When it lands, diff
+   this repo's `provides`/`CAPABILITY_IDS` choices (`motion_graphics.{bug,chapter,progress,countdown}`, all
+   provisional) against whatever actually merged and reconcile if it differs — this is now 4 ids to reconcile,
+   not 1.
+3. **Done, not just flagged**: audited whether the newer types (`bug`/`chapter`/`progress`/`countdown`) get the
+   same security coverage the original 4 do. Finding: `_reject_forbidden()` runs on the raw document before any
+   type-specific parsing, so forbidden-field rejection was already generic across every type by construction, not
+   something each new type needed its own copy of — confirmed by reading `model.parse_request()`, not assumed.
+   None of the four new types has any `path`-type parameter either, so PathPolicy/traversal/symlink tests
+   genuinely don't apply to them (nothing to add there). Added one small explicit regression test,
+   `test_forbidden_field_rejected_for_every_element_type` in `tests/test_security.py`, parametrized across all 5
+   element-factory helpers, so this generality is pinned down rather than an implicit assumption resting only on
+   `title`'s coverage. If a *future* element type ever gets a `path` parameter, add it to the PathPolicy tests
+   explicitly then — that part of the boundary is not automatically generic the way forbidden-field rejection is.
+4. Do not invent OS integration machinery beyond what a *verified* sibling contract/registry actually reads (see
    the compatibility recipe above) — the OS layer is still mostly unbuilt; keep this Skill's standalone
    contract/doctor/CLI as the source of truth for its own behavior.
