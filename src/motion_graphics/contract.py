@@ -16,6 +16,24 @@ from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FORBIDDEN_KEYS, ID_RE, MAX_D
 
 CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
 
+# Cross-repository Capability ids, matching the ids assigned to this Skill in
+# kajisho5/AI-video-production-OS's `docs/CAPABILITY_MATRIX.md` (as of this writing, on that
+# repository's not-yet-merged `claude/ai-video-production-os-arch-*` architecture branch --
+# not its main branch -- verified directly against that file's content and against the field
+# shape `registry/contract.py` there actually validates, not merely against its own docs).
+# `text_overlay` and `image_overlay` are both the free-form "overlay" capability there
+# (`motion_graphics.overlay`, "free-form text, image/logo overlay"); `title` and
+# `lower_third` each get their own built-in-template id.
+CAPABILITY_IDS: Dict[str, str] = {
+    "title": "motion_graphics.title_card", "lower_third": "motion_graphics.lower_third",
+    "text_overlay": "motion_graphics.overlay", "image_overlay": "motion_graphics.overlay",
+}
+
+
+def capability_provides() -> List[Dict[str, str]]:
+    return [{"id": CAPABILITY_IDS[etype], "lifecycle": "EXPERIMENTAL", "tool_id": f"{SKILL_ID}/run", "element_type": etype}
+            for etype in sorted(ELEMENT_TYPES)]
+
 
 def _param_schema(ps: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in ps.items() if k in ("type", "required", "min", "max", "enum", "default", "description", "max_length")}
@@ -59,6 +77,7 @@ def skill_contract() -> Dict[str, Any]:
                          "video editing (video-editing-skill)", "color grading (color-grading-skill)", "subtitle generation (subtitle-skill)",
                          "shell execution", "network access"],
         "tools": tools,
+        "provides": capability_provides(),
         "element_types": element_type_specs(),
         "unsupported_element_types": [{"type": t, "status": "not_implemented", "reason": r} for t, r in UNSUPPORTED_ELEMENT_TYPES.items()],
         "animations": animation_specs(),
