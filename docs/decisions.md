@@ -113,3 +113,20 @@ exposed by any ffmpeg-skill tool today). `chapter`/`bug`/`progress`/`countdown` 
 templates, but STEP 1's requested minimum for this first Skill is title, lower third, text overlay, and
 image/logo overlay; STEP 9 forbids publishing an operation as supported before it has a working renderer and
 tests. They are natural candidates for a follow-up PR (see README "next PR candidates" in the final report).
+
+## ADR-10: `provides` publishes cross-repository Capability ids, with `text_overlay` and `image_overlay` sharing one id
+
+**Decision**: `contract.py` adds a top-level `provides` list, one entry per `model.ELEMENT_TYPES` key, each with a
+Capability id, a `lifecycle`, the `tool_id` (always `motion-graphics/run`, this Skill's one execution tool) and the
+`element_type` it maps to. The ids are `title` -> `motion_graphics.title_card`, `lower_third` ->
+`motion_graphics.lower_third`, and both `text_overlay` and `image_overlay` -> `motion_graphics.overlay`.
+
+**Why**: for `kajisho5/AI-video-production-OS`'s `CapabilityContract.provides` (`docs/SPEC.md` there), so a
+registry can resolve "who provides `motion_graphics.title_card`" without hardcoding this repository. `ELEMENT_TYPES`
+has no capability-shaped id of its own, so these ids are a new naming decision, not a mechanical derivation — they
+match the ids already assigned in that project's own `docs/CAPABILITY_MATRIX.md`, kept here in
+`contract.CAPABILITY_IDS` as the single source of truth going forward. `text_overlay` and `image_overlay` share
+`motion_graphics.overlay` because that matrix already treats them as one capability ("free-form text, image/logo
+overlay"), not two — `title` and `lower_third` each keep their own built-in-template id. Additive: a new top-level
+key derived from `ELEMENT_TYPES`, saying nothing `element_types[]` doesn't already say, only indexed by Capability
+id instead of element type.

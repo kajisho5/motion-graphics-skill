@@ -160,6 +160,15 @@ should:
 respectively) — `contract.response.success` documents all three shapes individually so a caller never has to
 guess which one it's looking at.
 
+`provides` lists this Skill's four element types by their cross-repository Capability id: `title` ->
+`motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, and both `text_overlay` and
+`image_overlay` -> `motion_graphics.overlay` (they share one id — that matrix already treats free-form text and
+image/logo overlay as one capability, not two). Each entry also carries its `tool_id` (always
+`motion-graphics/run`, this Skill's one execution tool) and a `lifecycle`. This is for
+`kajisho5/AI-video-production-OS`'s `CapabilityContract.provides` (see that project's `docs/SPEC.md`), so a
+registry can resolve "who provides `motion_graphics.title_card`" without hardcoding this repository. It is
+additive and derived from `model.ELEMENT_TYPES`; see `docs/decisions.md` ADR-10.
+
 ## Security
 
 - No `shell=True`, no arbitrary executable, no arbitrary ffmpeg args/filters, no command injection, no
