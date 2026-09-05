@@ -28,8 +28,22 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
 
       - name: Install ffmpeg (macOS)
+        # macos-latest runners ship with an ffmpeg already on PATH, so `brew install ffmpeg` is a silent no-op
+        # against that pre-existing (often minimal, no libfreetype/drawtext) build. Install a known full static
+        # build instead so drawtext/fontconfig are actually available, and verify it before running any tests.
         if: runner.os == 'macOS'
-        run: brew install ffmpeg
+        shell: bash
+        run: |
+          curl -sSL https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip -o ffmpeg.zip
+          curl -sSL https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip -o ffprobe.zip
+          unzip -o ffmpeg.zip -d /usr/local/bin
+          unzip -o ffprobe.zip -d /usr/local/bin
+          chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
+          /usr/local/bin/ffmpeg -version
+          /usr/local/bin/ffmpeg -filters 2>&1 | grep -q drawtext || { echo "::error::installed ffmpeg is missing the drawtext filter"; exit 1; }
+          # Apple Silicon runners put /opt/homebrew/bin (a pre-installed, possibly minimal ffmpeg) ahead of
+          # /usr/local/bin on PATH; prepend it here so later steps resolve the full build just installed.
+          echo "/usr/local/bin" >> "$GITHUB_PATH"
 
       - name: Install ffmpeg (Windows)
         if: runner.os == 'Windows'

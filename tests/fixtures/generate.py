@@ -4,7 +4,8 @@ ffmpeg directly; the skill under test never does.
   video.mp4       6 s 320x180 H.264 + mono AAC tone
   video_short.mp4 2 s 320x180 H.264, no audio (used for time-range negative tests)
   logo.png        64x64 PNG with alpha (a translucent red square) for image_overlay tests
-  font.ttf        a copy of a real system font (DejaVu Sans), for the font_file path
+  font.ttf        a copy of a real font already on this machine (DejaVu preferred; any .ttf/.ttc otherwise),
+                  for the font_file path -- the test only needs valid font bytes, not a specific family
   text.txt        not media"""
 from __future__ import annotations
 
@@ -14,9 +15,16 @@ from pathlib import Path
 from typing import Dict
 
 FF = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-nostdin"]
+# DejaVu first (Linux CI installs fonts-dejavu-core); otherwise any font ffmpeg-skill/overlay --font-file already
+# knows how to load, so this fixture (and the tests using it) works on every CI platform without extra installs.
 SYSTEM_FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",     # macOS
+    "/System/Library/Fonts/Helvetica.ttc",              # macOS
+    "/Library/Fonts/Arial.ttf",                         # macOS (older layout)
+    "C:\\Windows\\Fonts\\arial.ttf",                    # Windows
+    "C:\\Windows\\Fonts\\calibri.ttf",                  # Windows
 )
 
 
