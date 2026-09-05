@@ -71,6 +71,24 @@ def test_contract_documents_all_three_response_shapes():
     assert "validation" in shapes["validate"] and "output" not in shapes["validate"]
 
 
+def test_contract_provides_one_capability_entry_per_element_type():
+    # `provides` is read by kajisho5/AI-video-production-OS's cross-repository Capability registry (its
+    # `registry.contract.validate_provides_entry` requires exactly `id` / `tool_id` (non-empty strings) and a
+    # `lifecycle` from a fixed enum; extra fields are permitted and ignored). One entry per ELEMENT_TYPES key;
+    # `text_overlay` and `image_overlay` intentionally share one capability id (see ADR-10).
+    c = skill_contract()
+    provides = c["provides"]
+    assert {p["element_type"] for p in provides} == set(ELEMENT_TYPES)
+    for p in provides:
+        assert isinstance(p["id"], str) and p["id"]
+        assert p["tool_id"] == "motion-graphics/run"
+        assert p["lifecycle"] in ("PROPOSED", "EXPERIMENTAL", "STABLE", "DEPRECATED", "RETIRED")
+    by_type = {p["element_type"]: p["id"] for p in provides}
+    assert by_type["title"] == "motion_graphics.title_card"
+    assert by_type["lower_third"] == "motion_graphics.lower_third"
+    assert by_type["text_overlay"] == by_type["image_overlay"] == "motion_graphics.overlay"
+
+
 def test_contract_forbidden_fields_present():
     c = skill_contract()
     for key in ("filter", "filter_complex", "shell", "command", "argv", "executable", "env"):

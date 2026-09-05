@@ -121,12 +121,16 @@ Capability id, a `lifecycle`, the `tool_id` (always `motion-graphics/run`, this 
 `element_type` it maps to. The ids are `title` -> `motion_graphics.title_card`, `lower_third` ->
 `motion_graphics.lower_third`, and both `text_overlay` and `image_overlay` -> `motion_graphics.overlay`.
 
-**Why**: for `kajisho5/AI-video-production-OS`'s `CapabilityContract.provides` (`docs/SPEC.md` there), so a
-registry can resolve "who provides `motion_graphics.title_card`" without hardcoding this repository. `ELEMENT_TYPES`
-has no capability-shaped id of its own, so these ids are a new naming decision, not a mechanical derivation — they
-match the ids already assigned in that project's own `docs/CAPABILITY_MATRIX.md`, kept here in
-`contract.CAPABILITY_IDS` as the single source of truth going forward. `text_overlay` and `image_overlay` share
-`motion_graphics.overlay` because that matrix already treats them as one capability ("free-form text, image/logo
-overlay"), not two — `title` and `lower_third` each keep their own built-in-template id. Additive: a new top-level
-key derived from `ELEMENT_TYPES`, saying nothing `element_types[]` doesn't already say, only indexed by Capability
-id instead of element type.
+**Why**: this anticipates `kajisho5/AI-video-production-OS`'s Capability registry, so it can eventually resolve
+"who provides `motion_graphics.title_card`" without hardcoding this repository. `ELEMENT_TYPES` has no
+capability-shaped id of its own, so these ids are a new naming decision, not a mechanical derivation — they match
+the ids assigned to this Skill in that project's `docs/CAPABILITY_MATRIX.md` and the entry shape its
+`registry/contract.py` actually validates (`id`/`tool_id`/`lifecycle`, extra fields ignored) — verified directly
+against both files' real content, not assumed from a description. As of this writing that content lives on that
+repository's not-yet-merged architecture branch, not its `main` (which carries only a placeholder README) — this
+is one of several ecosystem Skills adding `provides` ahead of that branch landing, kept here in
+`contract.CAPABILITY_IDS` as this repository's own source of truth in the meantime, to be reconciled if the
+merged spec ever assigns different ids. `text_overlay` and `image_overlay` share `motion_graphics.overlay` because
+that matrix already treats them as one capability ("free-form text, image/logo overlay"), not two — `title` and
+`lower_third` each keep their own built-in-template id. Additive: a new top-level key derived from `ELEMENT_TYPES`,
+saying nothing `element_types[]` doesn't already say, only indexed by Capability id instead of element type.
