@@ -122,15 +122,31 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
     },
+    "chapter": {
+        "tool": "graphics", "template": "chapter",
+        "description": "Small chip in a corner (e.g. \"Part 2 -- Setup\"). Built-in 0.3s alpha fade in/out "
+                       "(ffmpeg-skill/graphics --template chapter); not configurable per element.",
+        "animation": "builtin_fade",
+        "parameters": {
+            "title": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
+            "position": {"type": _STR, "required": False, "default": "bottom-left", "enum": CORNER_POSITION_NAMES},
+            # Unlike `bug`, `chapter`'s exposed color parameter is `primary_color` (the chip's background), not
+            # `text_color`: ffmpeg-skill/graphics's chapter branch always uses the brand background color for text
+            # and `--primary`/brand primary for the box -- `--text-color` has no effect on this template at all
+            # (see graphics.py: `txt_color = bg if template == "chapter" else text_c`), so exposing it here would
+            # be a parameter that silently does nothing.
+            "primary_color": {"type": _COLOR, "required": False},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
 # support they cannot back with a renderer (STEP 9).
 UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {
     "shape": "no typed delegate tool draws an arbitrary shape (position/size/color) without a raw ffmpeg filter string; needs a typed shape tool in ffmpeg-skill first",
-    "chapter": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay, bug only)",
-    "progress": "same as chapter: template exists upstream, not exposed by this contract yet",
-    "countdown": "same as chapter: template exists upstream, not exposed by this contract yet",
+    "progress": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay, bug, chapter only)",
+    "countdown": "same as progress: template exists upstream, not exposed by this contract yet",
 }
 
 ANIMATION_KINDS: Dict[str, Dict[str, Any]] = {

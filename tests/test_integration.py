@@ -17,7 +17,7 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import Executor
 from motion_graphics.security import PathPolicy
 
-from conftest import bug_element, image_overlay_element, request_doc, text_overlay_element, title_element, run_cli, one_json
+from conftest import bug_element, chapter_element, image_overlay_element, request_doc, text_overlay_element, title_element, run_cli, one_json
 
 
 def _executor(skill_dir, workspace) -> Executor:
@@ -142,6 +142,32 @@ def test_bug_draws_at_its_declared_corner(skill_dir, workspace, position, crop):
     luma_with_bug = _luma(out, 1.0, crop)
     luma_source = _luma(str(workspace / "video.mp4"), 1.0, crop)
     assert abs(luma_with_bug - luma_source) > 2.0, f"bug did not measurably change the pixels at its declared {position} corner"
+
+
+# ---- chapter
+def test_chapter_renders_valid_video(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([chapter_element(title="Part 2 -- Setup", start=0, end=4)], output="out/chapter.mp4"))
+    assert resp["ok"] is True
+    out = Path(resp["output"]["path"])
+    assert out.is_file() and out.stat().st_size > 0
+    assert resp["output"]["sha256"] == __import__("hashlib").sha256(out.read_bytes()).hexdigest()
+    meta = _probe(skill_dir, str(out))
+    assert meta["video"]["width"] == 320 and meta["video"]["height"] == 180
+
+
+@pytest.mark.parametrize("position,crop", [("bottom-left", "40:20:40:110"), ("top-right", "50:20:250:45")])
+def test_chapter_draws_at_its_declared_corner(skill_dir, workspace, position, crop):
+    # Crop windows sized empirically to ffmpeg-skill/graphics's actual "chapter" layout on the 320x180 fixture
+    # video (fontsize=7, a strongly-opaque (0.9 alpha) brand-primary box -- a clearer signal than bug's, still
+    # measured against the real rendered output rather than guessed from the filter expression).
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([chapter_element(title="Part 2", position=position, start=0, end=4)], output=f"out/chapter_{position}.mp4"))
+    assert resp["ok"] is True
+    out = resp["output"]["path"]
+    luma_with_chapter = _luma(out, 1.0, crop)
+    luma_source = _luma(str(workspace / "video.mp4"), 1.0, crop)
+    assert abs(luma_with_chapter - luma_source) > 3.0, f"chapter did not measurably change the pixels at its declared {position} corner"
 
 
 def test_missing_image_asset_fails(skill_dir, workspace):

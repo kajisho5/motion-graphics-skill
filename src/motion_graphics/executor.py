@@ -232,7 +232,9 @@ class Executor:
                 argv += ["--name", p["name"]]
                 if p.get("title"):
                     argv += ["--title", p["title"]]
-            else:  # bug
+            else:  # bug, chapter -- same argv shape; each type's own parameter schema decides which of
+                    # text_color/primary_color exists at all, so the trailing block below sends only the one that
+                    # actually affects that template (see model.ELEMENT_TYPES comments for why they differ)
                 argv += ["--title", p["title"], "--position", p["position"]]
             if p.get("text_color"):
                 argv += ["--text-color", p["text_color"]]
