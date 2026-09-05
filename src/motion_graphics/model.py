@@ -154,13 +154,33 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:color", "filter:drawbox", "filter:overlay", "encoder:libx264"],
     },
+    "countdown": {
+        "tool": "graphics", "template": "countdown",
+        "description": "Big centered numbers counting down from count_from to 0, evenly spaced across the "
+                       "element's own start/end window, each with a brief built-in pulse "
+                       "(ffmpeg-skill/graphics --template countdown). No text, no position (always centered).",
+        # graphics.py's countdown branch gives each digit its own alpha curve (a brief opacity dip at the start
+        # of its segment, `1-0.15*min(1,(t-ks)/(seg*0.5))`), fixed and not exposed by any CLI flag -- this is a
+        # real built-in animation, distinct from both title/bug/chapter's `fade` and progress's total absence of
+        # one, so it gets its own honest label rather than being folded into "builtin_fade" or "none".
+        "animation": "builtin_pulse",
+        "parameters": {
+            # graphics.py never reads --title/--text-color/--position for countdown; digit color comes from
+            # --primary (so primary_color), the digit border is always the fixed brand background (not
+            # overridable). count_from mirrors --from (its own CLI default is 5); bounded the same way
+            # MAX_ELEMENTS bounds the request as a whole, so a request cannot make this Skill build an
+            # unreasonably long chain of per-digit drawtext filters.
+            "count_from": {"type": _INT, "required": False, "default": 5, "min": 1, "max": 60},
+            "primary_color": {"type": _COLOR, "required": False},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
 # support they cannot back with a renderer (STEP 9).
 UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {
     "shape": "no typed delegate tool draws an arbitrary shape (position/size/color) without a raw ffmpeg filter string; needs a typed shape tool in ffmpeg-skill first",
-    "countdown": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay, bug, chapter, progress only)",
 }
 
 ANIMATION_KINDS: Dict[str, Dict[str, Any]] = {

@@ -2,7 +2,7 @@
 
 Deterministic motion-graphics **rendering execution** Skill for the AI Video Production Ecosystem. It renders a
 typed, already-decided Graphics Document — titles, lower thirds, free-form text overlays, image/logo overlays,
-persistent corner "bug" watermarks, chapter chips, and a bottom progress bar — onto a video, through
+persistent corner "bug" watermarks, chapter chips, a bottom progress bar, and a countdown — onto a video, through
 [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill), and reports provenance.
 
 It is **not** an AI agent. It never decides what to show, when to show it, or how it should look; it never
@@ -92,6 +92,7 @@ generated list:
 | `bug` | `ffmpeg-skill/graphics --template bug` | fixed 0.3s fade in/out (not configurable) |
 | `chapter` | `ffmpeg-skill/graphics --template chapter` | fixed 0.3s fade in/out (not configurable) |
 | `progress` | `ffmpeg-skill/graphics --template progress` | none at all -- driven entirely by its own start/end fill, no alpha |
+| `countdown` | `ffmpeg-skill/graphics --template countdown` | fixed, per-digit 0.5s pulse (not configurable) |
 
 `bug` is a persistent text watermark in one of the four corners (e.g. `"LIVE"` or `"@handle"`) — its `position` is
 a closed vocabulary of just those four corners (`top-left`/`top-right`/`bottom-left`/`bottom-right`), a strict
@@ -108,9 +109,14 @@ element's own `start`/`end` window. It has no `title`, no `position` (always ful
 animation — the fill itself, driven by the timeline, is the only motion it has. Its only parameter is
 `primary_color` (the fill color); the track behind it is a fixed brand background color, not overridable.
 
-`shape` and `countdown` are intentionally **not implemented** in this contract (see `unsupported_element_types`
-in the contract, and STEP 24 of the design brief) — they are not published as supported by `doctor`/`contract`
-because there is no working renderer behind them yet.
+`countdown` draws big centered numbers counting down from `count_from` (default 5, 1-60) to 0, evenly spaced
+across the element's own `start`/`end` window, each with a brief built-in "pulse" (a fixed opacity dip at the
+start of its segment) — distinct from `fade` and not configurable. No `title`, no `position` (always centered);
+its only parameter besides `count_from` is `primary_color` (digit color).
+
+`shape` is intentionally **not implemented** in this contract (see `unsupported_element_types` in the contract,
+and STEP 24 of the design brief) — no delegate tool anywhere draws an arbitrary shape without a raw ffmpeg
+filter string, so it is not published as supported by `doctor`/`contract`.
 
 ## Timeline validation
 
@@ -182,10 +188,10 @@ guess which one it's looking at.
 `provides` lists this Skill's element types by their cross-repository Capability id: `title` ->
 `motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, both `text_overlay` and
 `image_overlay` -> `motion_graphics.overlay` (they share one id — that matrix already treats free-form text and
-image/logo overlay as one capability, not two), and `bug`/`chapter`/`progress` -> `motion_graphics.bug` /
-`motion_graphics.chapter` / `motion_graphics.progress` respectively (this repository's own provisional ids —
-that matrix predates all three element types' implementation here, see `docs/decisions.md` ADR-11/ADR-12/
-ADR-13). Each entry also carries its `tool_id` (always
+image/logo overlay as one capability, not two), and `bug`/`chapter`/`progress`/`countdown` -> `motion_graphics.bug`
+/ `motion_graphics.chapter` / `motion_graphics.progress` / `motion_graphics.countdown` respectively (this
+repository's own provisional ids — that matrix predates all four element types' implementation here, see
+`docs/decisions.md` ADR-11/ADR-12/ADR-13/ADR-14). Each entry also carries its `tool_id` (always
 `motion-graphics/run`, this Skill's one execution tool) and a `lifecycle`. This anticipates
 `kajisho5/AI-video-production-OS`'s Capability registry (`docs/CAPABILITY_MATRIX.md`, `registry/contract.py`, as
 of this writing on that repository's not-yet-merged architecture branch, not its `main`), so a registry can

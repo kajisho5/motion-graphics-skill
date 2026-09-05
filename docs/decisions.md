@@ -103,18 +103,19 @@ reports success.
 **Why**: STEP 12 explicitly forbids exactly this. A silent substitution would make a passing render silently wrong
 (the wrong typeface, the wrong logo) with no signal to the caller.
 
-## ADR-8: `shape` and the extra `graphics.py` templates are not implemented in this contract
+## ADR-8: `shape` is not implemented in this contract; the other `graphics.py` templates now all are
 
-**Decision**: `shape` and `countdown` are declared in
-`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`. (`bug`, `chapter`, and
-`progress` were in this list too, until ADR-11/ADR-12/ADR-13 implemented them — this ADR's rationale below still
-applies to the one that remains unsupported.)
+**Decision**: `shape` is declared in `model.UNSUPPORTED_ELEMENT_TYPES` and never appears as `supported` in
+`contract`/`doctor`. (`chapter`, `bug`, `progress`, and `countdown` were in this list too, at various points,
+until ADR-11/ADR-12/ADR-13/ADR-14 implemented them one PR at a time; every template `ffmpeg-skill/graphics`
+exposes is now implemented here.)
 
-**Why**: `shape` has no typed delegate (drawing an arbitrary rectangle/shape without a raw filter string is not
-exposed by any ffmpeg-skill tool today). `countdown` does exist as an `ffmpeg-skill/graphics` template, but
-STEP 1's requested minimum for this first Skill is title, lower third, text overlay, and image/logo overlay;
-STEP 9 forbids publishing an operation as supported before it has a working renderer and tests. It is a natural
-candidate for a follow-up PR, the same way `bug`, `chapter`, and `progress` were (ADR-11/ADR-12/ADR-13).
+**Why `shape` specifically stays unsupported, unlike the others**: it is not merely "outside this Skill's first
+minimum" the way `bug`/`chapter`/`progress`/`countdown` briefly were -- it has **no typed delegate anywhere
+upstream** at all. Drawing an arbitrary rectangle/shape (position/size/color) is not exposed by any
+`ffmpeg-skill` tool today; implementing it here would mean this Skill building its own raw filter string, which
+STEP 7/STEP 10 forbid outright. Implementing `shape` is blocked on `ffmpeg-skill` gaining a typed shape tool
+first -- out of this repository's boundary to add.
 
 ## ADR-10: `provides` publishes cross-repository Capability ids, with `text_overlay` and `image_overlay` sharing one id
 
@@ -235,3 +236,36 @@ to.
 Verified end-to-end the same way as ADR-11/ADR-12: `video-production-agent`'s pinned `check_contract()`, and the
 ecosystem registry's `validate_provides_entry()`, both still pass with `progress` added (see `CLAUDE.md`'s
 reproduction recipe).
+
+## ADR-14: `countdown` is implemented; its built-in animation is `"builtin_pulse"`, a new, honest label
+
+**Decision**: `countdown` (big centered numbers counting down from `count_from` to 0 across the element's own
+`start`/`end` window, `ffmpeg-skill/graphics --template countdown`) is implemented and removed from
+`UNSUPPORTED_ELEMENT_TYPES` -- the fourth and, per ADR-8, last of `ffmpeg-skill/graphics`'s extra templates to be
+implemented here. Parameters: `count_from` (optional, default 5, bounded `[1, 60]`) and `primary_color`
+(optional); no `title`, no `position` (always centered) -- `graphics.py`'s countdown branch never reads
+`--title`/`--text-color`/`--position` at all. Its capability id is `motion_graphics.countdown` (provisional, same
+reasoning as the other three, ADR-11).
+
+**Why `count_from` is bounded `[1, 60]`**: `graphics.py` itself places no bound on `--from` (`type=int` only);
+`n=0` degenerates to a single static digit for the whole window (not a crash, but not really a "countdown"
+either), and an unbounded `n` would let a request make this Skill build an arbitrarily long chain of per-digit
+`drawtext` filters -- the same class of concern `MAX_ELEMENTS` already bounds for the request as a whole, just
+at the single-element level here. `60` is a generous ceiling for any real countdown use (a full minute, one
+digit per second) while still being a fixed, auditable bound rather than "whatever an argparse `int` allows".
+
+**Why the animation is `"builtin_pulse"`, a value that didn't exist before this PR**: `graphics.py` gives each
+digit its own alpha curve, `1-0.15*min(1,(t-ks)/(seg*0.5))` -- a brief opacity dip at the start of its own
+segment, fixed and not exposed by any CLI flag. This is a real, distinct built-in animation: not `title`/`bug`/
+`chapter`'s `fade` (a smooth in/out over the whole element), and not `progress`'s total absence of one (`"none"`,
+ADR-13). Folding it into either existing label would have been factually wrong about what the renderer actually
+does; introducing `"builtin_pulse"` costs nothing in `check_contract()` terms (that check never inspects an
+element type's `animation` value at all, only `_animation()`'s own `!= "configurable"` gate, which treats every
+non-configurable value identically) but keeps the contract honest about what `doctor`/an agent would actually see
+if it played the output back.
+
+Verified end-to-end the same way as ADR-11/ADR-12/ADR-13: `video-production-agent`'s pinned `check_contract()`,
+and the ecosystem registry's `validate_provides_entry()`, both still pass with `countdown` added (see
+`CLAUDE.md`'s reproduction recipe). After this PR, `shape` (ADR-8) is the only element type from the original
+design brief's full list still unimplemented, and it is blocked on `ffmpeg-skill` gaining a capability this
+repository does not have the authority to add itself.

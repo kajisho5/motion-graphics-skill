@@ -17,7 +17,7 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import Executor
 from motion_graphics.security import PathPolicy
 
-from conftest import bug_element, chapter_element, image_overlay_element, progress_element, request_doc, text_overlay_element, title_element, run_cli, one_json
+from conftest import bug_element, chapter_element, countdown_element, image_overlay_element, progress_element, request_doc, text_overlay_element, title_element, run_cli, one_json
 
 
 def _executor(skill_dir, workspace) -> Executor:
@@ -200,6 +200,33 @@ def test_progress_bar_fills_left_to_right_over_time(skill_dir, workspace):
     assert early_at_1s > 50.0, "the bar had not measurably reached the early region 1s into a 4s fill"
     assert late_at_1s < 30.0, "the bar had already reached the late region well before it should have"
     assert late_at_39s > 50.0, "the bar had not measurably reached the late region by the very end of the fill"
+
+
+# ---- countdown
+def test_countdown_renders_valid_video(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([countdown_element(count_from=3, start=0, end=4)], output="out/countdown.mp4"))
+    assert resp["ok"] is True
+    out = Path(resp["output"]["path"])
+    assert out.is_file() and out.stat().st_size > 0
+    assert resp["output"]["sha256"] == __import__("hashlib").sha256(out.read_bytes()).hexdigest()
+    meta = _probe(skill_dir, str(out))
+    assert meta["video"]["width"] == 320 and meta["video"]["height"] == 180
+
+
+@pytest.mark.parametrize("t", [0.5, 3.5])
+def test_countdown_draws_a_digit_throughout_its_window(skill_dir, workspace, t):
+    # count_from=3 over [0, 4] splits into 4 equal 1s segments (one digit each, 3/2/1/0); a centered crop window
+    # sized empirically to the actual fontsize=57 rendered digit on this 320x180 fixture. Checked at the first and
+    # last segment to confirm a digit is drawn throughout the window, not only near the start.
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([countdown_element(count_from=3, start=0, end=4)], output=f"out/countdown_{t}.mp4"))
+    assert resp["ok"] is True
+    out = resp["output"]["path"]
+    crop = "40:60:140:60"
+    luma_with_digit = _luma(out, t, crop)
+    luma_source = _luma(str(workspace / "video.mp4"), t, crop)
+    assert abs(luma_with_digit - luma_source) > 3.0, f"countdown did not measurably draw a digit at t={t}s"
 
 
 def test_missing_image_asset_fails(skill_dir, workspace):

@@ -23,14 +23,16 @@ CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
 # shape `registry/contract.py` there actually validates, not merely against its own docs).
 # `text_overlay` and `image_overlay` are both the free-form "overlay" capability there
 # (`motion_graphics.overlay`, "free-form text, image/logo overlay"); `title` and
-# `lower_third` each get their own built-in-template id. `bug`/`chapter`/`progress` have no id
-# there at all -- that matrix predates these element types' implementation here -- so the
-# `motion_graphics.<name>` ids below for them are this repository's own provisional choices,
-# not a verified match; reconcile them if the OS side ever assigns different ids once merged.
+# `lower_third` each get their own built-in-template id. `bug`/`chapter`/`progress`/`countdown`
+# have no id there at all -- that matrix predates these element types' implementation here --
+# so the `motion_graphics.<name>` ids below for them are this repository's own provisional
+# choices, not a verified match; reconcile them if the OS side ever assigns different ids once
+# merged.
 CAPABILITY_IDS: Dict[str, str] = {
     "title": "motion_graphics.title_card", "lower_third": "motion_graphics.lower_third",
     "text_overlay": "motion_graphics.overlay", "image_overlay": "motion_graphics.overlay",
     "bug": "motion_graphics.bug", "chapter": "motion_graphics.chapter", "progress": "motion_graphics.progress",
+    "countdown": "motion_graphics.countdown",
 }
 
 

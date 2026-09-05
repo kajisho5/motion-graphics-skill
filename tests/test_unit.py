@@ -8,7 +8,7 @@ from motion_graphics.fonts import DEFAULT_FONT_ID, FONT_REGISTRY, resolve_font
 from motion_graphics.model import ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES, parse_request
 from motion_graphics.security import PathPolicy, check_filename
 
-from conftest import bug_element, chapter_element, progress_element, request_doc, text_overlay_element, title_element
+from conftest import bug_element, chapter_element, countdown_element, progress_element, request_doc, text_overlay_element, title_element
 
 
 # ---- request parsing / structure
@@ -257,6 +257,48 @@ def test_progress_has_no_title_or_position_parameter():
 
 def test_progress_does_not_accept_configurable_animation():
     d = request_doc([{**progress_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "UNSUPPORTED_OPERATION"
+
+
+# ---- countdown
+def test_countdown_parses_with_default_count():
+    doc = parse_request(request_doc([countdown_element()]))
+    assert doc.elements[0].type == "countdown"
+    assert doc.elements[0].parameters["count_from"] == 5
+
+
+def test_countdown_accepts_a_custom_count():
+    doc = parse_request(request_doc([countdown_element(count_from=10)]))
+    assert doc.elements[0].parameters["count_from"] == 10
+
+
+@pytest.mark.parametrize("bad", [0, -1, 61, 1000, 5.5, "5"])
+def test_countdown_rejects_out_of_range_or_non_integer_count(bad):
+    d = request_doc([countdown_element(count_from=bad)])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_countdown_has_no_title_position_or_text_color_parameter():
+    # graphics.py's countdown branch never reads --title/--position/--text-color -- exposing any of them would
+    # be dishonest metadata (a parameter with no effect on the rendered output).
+    for extra in ({"title": "x"}, {"position": "top-left"}, {"text_color": "red"}):
+        d = request_doc([countdown_element(**extra)])
+        with pytest.raises(MotionGraphicsError) as e:
+            parse_request(d)
+        assert e.value.code == "INVALID_REQUEST"
+
+
+def test_countdown_accepts_primary_color():
+    doc = parse_request(request_doc([countdown_element(primary_color="00FF00")]))
+    assert doc.elements[0].parameters["primary_color"] == "00FF00"
+
+
+def test_countdown_does_not_accept_configurable_animation():
+    d = request_doc([{**countdown_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
     with pytest.raises(MotionGraphicsError) as e:
         parse_request(d)
     assert e.value.code == "UNSUPPORTED_OPERATION"

@@ -237,7 +237,9 @@ class Executor:
                 # primary_color exists at all, so the trailing block below sends only the one that actually
                 # affects that template (see model.ELEMENT_TYPES comments for why they differ)
                 argv += ["--title", p["title"], "--position", p["position"]]
-            # else: progress -- no --title/--position at all (see model.ELEMENT_TYPES); only the trailing
+            elif el.type == "countdown":
+                argv += ["--from", str(p["count_from"])]
+            # else: progress -- no --title/--position/--from at all (see model.ELEMENT_TYPES); only the trailing
             # primary_color passthrough below applies to it
             if p.get("text_color"):
                 argv += ["--text-color", p["text_color"]]
