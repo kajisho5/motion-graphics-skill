@@ -17,7 +17,7 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import Executor
 from motion_graphics.security import PathPolicy
 
-from conftest import image_overlay_element, request_doc, text_overlay_element, title_element, run_cli, one_json
+from conftest import bug_element, image_overlay_element, request_doc, text_overlay_element, title_element, run_cli, one_json
 
 
 def _executor(skill_dir, workspace) -> Executor:
@@ -116,6 +116,32 @@ def test_image_overlay_bad_extension_rejected(skill_dir, workspace):
     with pytest.raises(MotionGraphicsError) as e:
         ex.response(request_doc([image_overlay_element(image_path="logo.svg")], output="out/x.mp4"))
     assert e.value.code == "UNSUPPORTED_FORMAT"
+
+
+# ---- bug
+def test_bug_renders_valid_video(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([bug_element(title="LIVE", start=0, end=4)], output="out/bug.mp4"))
+    assert resp["ok"] is True
+    out = Path(resp["output"]["path"])
+    assert out.is_file() and out.stat().st_size > 0
+    assert resp["output"]["sha256"] == __import__("hashlib").sha256(out.read_bytes()).hexdigest()
+    meta = _probe(skill_dir, str(out))
+    assert meta["video"]["width"] == 320 and meta["video"]["height"] == 180
+
+
+@pytest.mark.parametrize("position,crop", [("top-right", "30:14:255:45"), ("bottom-left", "30:14:45:118")])
+def test_bug_draws_at_its_declared_corner(skill_dir, workspace, position, crop):
+    # Crop windows are sized to ffmpeg-skill/graphics's actual "bug" layout on the 320x180 fixture video (a small
+    # fontsize=5 text+box near each margin, verified empirically): tight, not a generous corner region, since
+    # averaging in unaffected pixels would dilute the signal below any reasonable threshold at this font size.
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([bug_element(title="LIVE", position=position, start=0, end=4)], output=f"out/bug_{position}.mp4"))
+    assert resp["ok"] is True
+    out = resp["output"]["path"]
+    luma_with_bug = _luma(out, 1.0, crop)
+    luma_source = _luma(str(workspace / "video.mp4"), 1.0, crop)
+    assert abs(luma_with_bug - luma_source) > 2.0, f"bug did not measurably change the pixels at its declared {position} corner"
 
 
 def test_missing_image_asset_fails(skill_dir, workspace):
