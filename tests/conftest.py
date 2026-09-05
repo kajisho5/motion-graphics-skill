@@ -82,6 +82,10 @@ def progress_element(element_id="prog1", start=0.0, end=2.0, **extra):
     return {"id": element_id, "type": "progress", "start": start, "end": end, "parameters": {**extra}}
 
 
+def countdown_element(element_id="cd1", start=0.0, end=3.0, **extra):
+    return {"id": element_id, "type": "countdown", "start": start, "end": end, "parameters": {**extra}}
+
+
 def run_cli(args, stdin_text=None, cwd=None):
     """Run the CLI in a subprocess (the real process boundary) and return (exit, stdout, stderr)."""
     import subprocess
