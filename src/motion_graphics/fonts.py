@@ -28,6 +28,21 @@ FONT_REGISTRY: Dict[str, Dict[str, str]] = {
 }
 DEFAULT_FONT_ID = "system:dejavu-sans"
 ALLOWED_FONT_EXTENSIONS = (".ttf", ".otf", ".ttc")
+_WIN_EXTENDED_PREFIX = "\\\\?\\"
+
+
+def _engine_font_file_arg(resolved_path: str) -> str:
+    """The path string handed to ffmpeg-skill's `--font-file`, which it embeds into a `fontfile=...` *filter*
+    option (drawtext) -- a different context from a plain `-i`/`-o` argv value. On Windows, Path.resolve(strict=True)
+    can return an extended-length path with a `\\\\?\\` prefix; converting THAT to forward slashes (as ffmpeg-skill's
+    own filter escaping does) produces `//?/C:/...`, which is not a path ffmpeg's file layer recognises, and its
+    filter-option parser then fails on the mangled result ("No option name near ...", "Invalid argument"). The
+    plain drive-letter form below is well within Windows' normal path length here and both opens correctly and
+    escapes correctly as a filter option value."""
+    if resolved_path.startswith(_WIN_EXTENDED_PREFIX):
+        rest = resolved_path[len(_WIN_EXTENDED_PREFIX):]
+        resolved_path = "\\\\" + rest[4:] if rest.startswith("UNC\\") else rest
+    return resolved_path.replace("\\", "/")
 
 
 @dataclass(frozen=True)
@@ -68,6 +83,6 @@ def resolve_font(spec: Optional[Dict[str, Any]], policy: PathPolicy) -> Resolved
             raise MotionGraphicsError("UNSUPPORTED_FORMAT", f"font_file must be one of {ALLOWED_FONT_EXTENSIONS}: {resolved.suffix}",
                                        {"field": "font_file", "extension": resolved.suffix})
         digest = sha256_file(str(resolved))
-        return ResolvedFont("file", None, resolved.stem, {"font_file": str(resolved)}, font_file_hash=digest, font_file_path=str(resolved))
+        return ResolvedFont("file", None, resolved.stem, {"font_file": _engine_font_file_arg(str(resolved))}, font_file_hash=digest, font_file_path=str(resolved))
     entry = FONT_REGISTRY[DEFAULT_FONT_ID]
     return ResolvedFont("system", DEFAULT_FONT_ID, entry["family"], {"font": entry["family"]})
