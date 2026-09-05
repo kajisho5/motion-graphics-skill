@@ -8,7 +8,7 @@ from motion_graphics.fonts import DEFAULT_FONT_ID, FONT_REGISTRY, resolve_font
 from motion_graphics.model import ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES, parse_request
 from motion_graphics.security import PathPolicy, check_filename
 
-from conftest import bug_element, chapter_element, request_doc, text_overlay_element, title_element
+from conftest import bug_element, chapter_element, progress_element, request_doc, text_overlay_element, title_element
 
 
 # ---- request parsing / structure
@@ -228,6 +228,35 @@ def test_chapter_accepts_primary_color():
 
 def test_chapter_does_not_accept_configurable_animation():
     d = request_doc([{**chapter_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "UNSUPPORTED_OPERATION"
+
+
+# ---- progress
+def test_progress_parses_with_no_parameters():
+    doc = parse_request(request_doc([progress_element()]))
+    assert doc.elements[0].type == "progress"
+    assert doc.elements[0].parameters == {}
+
+
+def test_progress_accepts_primary_color():
+    doc = parse_request(request_doc([progress_element(primary_color="00FF00")]))
+    assert doc.elements[0].parameters["primary_color"] == "00FF00"
+
+
+def test_progress_has_no_title_or_position_parameter():
+    # progress.py's graphics branch never reads --title/--position at all -- exposing either would be dishonest
+    # metadata (a parameter with no effect on the rendered output).
+    for extra in ({"title": "x"}, {"position": "top-left"}, {"text_color": "red"}):
+        d = request_doc([progress_element(**extra)])
+        with pytest.raises(MotionGraphicsError) as e:
+            parse_request(d)
+        assert e.value.code == "INVALID_REQUEST"
+
+
+def test_progress_does_not_accept_configurable_animation():
+    d = request_doc([{**progress_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
     with pytest.raises(MotionGraphicsError) as e:
         parse_request(d)
     assert e.value.code == "UNSUPPORTED_OPERATION"

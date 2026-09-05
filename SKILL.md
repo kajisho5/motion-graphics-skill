@@ -1,6 +1,6 @@
 ---
 name: motion-graphics
-description: Deterministic motion-graphics rendering execution Skill for the AI Video Production Ecosystem. Use it when a caller (normally video-production-agent) has already decided what graphic to show, when to show it, and roughly how it should look, and needs it rendered safely: title cards, lower thirds, free-form text overlays, image/logo overlays, persistent corner "bug" watermarks, and chapter chips, with built-in template animation (title/lower-third/bug/chapter fade and slide) or a configurable linear fade (text/image overlays). Do NOT use it to decide what graphic to show, when, or how it should look (video-production-agent), to edit video (video-editing-skill), to grade color (color-grading-skill), to generate or translate subtitles (subtitle-skill), to measure or QC media (qc-skill, media-analysis-skill), or to run arbitrary ffmpeg commands or filters (it refuses them).
+description: Deterministic motion-graphics rendering execution Skill for the AI Video Production Ecosystem. Use it when a caller (normally video-production-agent) has already decided what graphic to show, when to show it, and roughly how it should look, and needs it rendered safely: title cards, lower thirds, free-form text overlays, image/logo overlays, persistent corner "bug" watermarks, chapter chips, and a bottom progress bar, with built-in template animation (title/lower-third/bug/chapter fade and slide) or a configurable linear fade (text/image overlays). Do NOT use it to decide what graphic to show, when, or how it should look (video-production-agent), to edit video (video-editing-skill), to grade color (color-grading-skill), to generate or translate subtitles (subtitle-skill), to measure or QC media (qc-skill, media-analysis-skill), or to run arbitrary ffmpeg commands or filters (it refuses them).
 ---
 
 # motion-graphics-skill
@@ -11,7 +11,7 @@ graphics model, security boundary, and testing notes.
 
 ## Ask for this, not that
 
-Ask this Skill to render: an exact `title`/`lower_third`/`text_overlay`/`image_overlay`/`bug`/`chapter` element, with exact
+Ask this Skill to render: an exact `title`/`lower_third`/`text_overlay`/`image_overlay`/`bug`/`chapter`/`progress` element, with exact
 `start`/`end` seconds and exact parameter values already decided. Every field is typed and range-checked; there is
 no free-text "make it look nice" input.
 

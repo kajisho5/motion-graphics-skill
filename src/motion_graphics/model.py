@@ -139,14 +139,28 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
     },
+    "progress": {
+        "tool": "graphics", "template": "progress",
+        "description": "Thin progress bar along the bottom of the frame that fills from empty to full over the "
+                       "element's own start/end window (ffmpeg-skill/graphics --template progress). No text, no "
+                       "position (always full-width along the bottom), and no fade -- it has none of its own to "
+                       "expose: the bar's fill is driven entirely by the element's timeline, not by an alpha.",
+        "animation": "none",
+        "parameters": {
+            # graphics.py's progress branch never reads --title/--text-color/--position at all; its only
+            # CLI-overridable value is the fill bar's color (brand primary, via --primary). The track behind it
+            # is always the fixed brand background color, not overridable by any flag this Skill could pass.
+            "primary_color": {"type": _COLOR, "required": False},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:color", "filter:drawbox", "filter:overlay", "encoder:libx264"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
 # support they cannot back with a renderer (STEP 9).
 UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {
     "shape": "no typed delegate tool draws an arbitrary shape (position/size/color) without a raw ffmpeg filter string; needs a typed shape tool in ffmpeg-skill first",
-    "progress": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay, bug, chapter only)",
-    "countdown": "same as progress: template exists upstream, not exposed by this contract yet",
+    "countdown": "ffmpeg-skill/graphics supports this template, but it is outside this contract's first minimum (title, lower_third, text_overlay, image_overlay, bug, chapter, progress only)",
 }
 
 ANIMATION_KINDS: Dict[str, Dict[str, Any]] = {

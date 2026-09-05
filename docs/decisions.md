@@ -105,16 +105,16 @@ reports success.
 
 ## ADR-8: `shape` and the extra `graphics.py` templates are not implemented in this contract
 
-**Decision**: `shape`, `progress`, `countdown` are declared in
-`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`. (`bug` and `chapter`
-were in this list too, until ADR-11/ADR-12 implemented them — this ADR's rationale below still applies to the two
-that remain unsupported.)
+**Decision**: `shape` and `countdown` are declared in
+`model.UNSUPPORTED_ELEMENT_TYPES` and never appear as `supported` in `contract`/`doctor`. (`bug`, `chapter`, and
+`progress` were in this list too, until ADR-11/ADR-12/ADR-13 implemented them — this ADR's rationale below still
+applies to the one that remains unsupported.)
 
 **Why**: `shape` has no typed delegate (drawing an arbitrary rectangle/shape without a raw filter string is not
-exposed by any ffmpeg-skill tool today). `progress`/`countdown` do exist as `ffmpeg-skill/graphics` templates, but
+exposed by any ffmpeg-skill tool today). `countdown` does exist as an `ffmpeg-skill/graphics` template, but
 STEP 1's requested minimum for this first Skill is title, lower third, text overlay, and image/logo overlay;
-STEP 9 forbids publishing an operation as supported before it has a working renderer and tests. They are natural
-candidates for a follow-up PR each, the same way `bug` and `chapter` were (ADR-11/ADR-12).
+STEP 9 forbids publishing an operation as supported before it has a working renderer and tests. It is a natural
+candidate for a follow-up PR, the same way `bug`, `chapter`, and `progress` were (ADR-11/ADR-12/ADR-13).
 
 ## ADR-10: `provides` publishes cross-repository Capability ids, with `text_overlay` and `image_overlay` sharing one id
 
@@ -199,3 +199,39 @@ ignored).
 Verified end-to-end the same way as ADR-11: `video-production-agent`'s pinned `check_contract()` and
 `RealSkillTests`, and the ecosystem registry's `validate_provides_entry()`, all still pass with `chapter` added
 (see `CLAUDE.md`'s reproduction recipe).
+
+## ADR-13: `progress` is implemented; it has no `title`, no `position`, and no animation at all
+
+**Decision**: `progress` (a thin bar along the bottom of the frame that fills left-to-right over the element's
+own `start`/`end` window, `ffmpeg-skill/graphics --template progress`) is implemented and removed from
+`UNSUPPORTED_ELEMENT_TYPES`, the third follow-up ADR-8 anticipated. Its only parameter is `primary_color`
+(optional); its `animation` field is `"none"` (not `"builtin_fade"`, and not `"configurable"`) -- `_animation()`'s
+existing check (`spec.get("animation") != "configurable"` -> reject any `animation` field at all) already treats
+any non-`"configurable"` value identically, so this needed no new validation code, only an honest value in
+`model.ELEMENT_TYPES`. Its capability id is `motion_graphics.progress` (provisional, same reasoning as
+`motion_graphics.bug`/`motion_graphics.chapter`, ADR-11).
+
+**Why no `title`/`position`, and why `executor._argv()` needed no new branch beyond documenting that progress
+falls through it**: reading `ffmpeg-skill/graphics.py`'s `progress` branch shows it never reads `--title`,
+`--text-color`, or `--position` at all -- the bar is always full-width, always along the bottom row, driven only
+by the shared `--start`/`--end`/`--crf`/`--preset` flags every `graphics` template gets plus `--primary` (already
+generic in `executor._argv()`'s trailing color-passthrough block). So `progress` simply falls into the same
+`if/elif` chain in `_argv()` with no type-specific branch body at all, rather than because one was written for
+it; `test_progress_has_no_title_or_position_parameter` in `tests/test_unit.py` pins down that `title`/`position`/
+`text_color` are rejected as unknown parameters for `progress` (none of them would have any effect if silently
+accepted).
+
+**Why the animation is objectively "none", not merely "not configurable"**: unlike `title`/`bug`/`chapter`
+(each wrapped in a `fade_a` alpha expression, `"builtin_fade"`), `progress`'s filter chain
+(`color`+`drawbox`+`overlay`) never references `fade_a` or any alpha expression at all -- the bar's own linear
+fill (`-w + w*min(1,max(0,(t-s)/(e-s)))`) is its only motion, driven by the timeline itself, not an opacity curve.
+Documenting it as `"builtin_fade"` would have been a factual error about what the renderer actually does, not
+just an omission; `"none"` is the honest value. `test_progress_bar_fills_left_to_right_over_time` in
+`tests/test_integration.py` verifies the fill actually progresses (an early x-region shows the bar well before a
+late x-region does, at real, measured points in time on a real render) -- an objective check of the one thing
+this element type is actually for, the same standard ADR-11/ADR-12's corner-placement checks hold `bug`/`chapter`
+to.
+
+Verified end-to-end the same way as ADR-11/ADR-12: `video-production-agent`'s pinned `check_contract()`, and the
+ecosystem registry's `validate_provides_entry()`, both still pass with `progress` added (see `CLAUDE.md`'s
+reproduction recipe).
