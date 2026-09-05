@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: "3.9"}
+          - {os: ubuntu-latest, python: "3.11"}
+          - {os: windows-latest, python: "3.11"}
+          - {os: macos-latest, python: "3.11"}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y
+
+      - name: Clone ffmpeg-skill
+        shell: bash
+        run: git clone --depth 1 https://github.com/kajisho5/ffmpeg-skill vendor/ffmpeg-skill
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest pyflakes
+
+      - name: Lint
+        run: python -m pyflakes src tests
+
+      - name: Unit test
+        shell: bash
+        env:
+          MOTION_GRAPHICS_FFMPEG_SKILL_DIR: ${{ github.workspace }}/vendor/ffmpeg-skill
+        run: python -m pytest -q
+
+      - name: doctor --json
+        shell: bash
+        run: motion-graphics doctor --json --ffmpeg-skill vendor/ffmpeg-skill
+
+      - name: contract --json is valid JSON
+        shell: bash
+        run: motion-graphics skill --json | python -c "import json,sys; json.load(sys.stdin)"

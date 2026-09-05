@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motion-graphics-skill"
+version = "0.1.0"
+description = "Deterministic motion-graphics rendering execution Skill (titles, lower thirds, text/image overlays) on top of ffmpeg-skill. Not an AI agent."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "kajisho5"}]
+keywords = ["motion-graphics", "ffmpeg", "video", "overlay", "skill", "production"]
+dependencies = []
+
+[project.scripts]
+motion-graphics = "motion_graphics.cli:main"
+
+[project.urls]
+Repository = "https://github.com/kajisho5/motion-graphics-skill"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = false
+warn_unused_ignores = false
