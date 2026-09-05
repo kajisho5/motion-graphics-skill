@@ -45,3 +45,9 @@ version, and that `graphics`/`overlay`/`probe` still declare the flags in `adapt
 - Filter-capability detection through `ffmpeg-skill doctor` is unreliable on FFmpeg builds whose `-filters` output
   format changed (observed on FFmpeg 8.0+, see `ffmpeg-skill`'s own `docs/contract.md`); `doctor.py` reports those
   capabilities as `unknown`, never `unsupported`, when `ffmpeg-skill` itself reports zero filters detected.
+- On some Windows FFmpeg builds, `ffmpeg-skill/overlay --font-file <absolute Windows path>` fails to parse
+  (`No option name near ...`, `Invalid argument`) regardless of slash style or escaping, because ffmpeg-skill's
+  own filter-path escaping round-trips the value through `pathlib.Path` and always re-normalises it to the same
+  form before escaping the drive letter's colon. Worked around entirely on this skill's side (ADR-9 in
+  `decisions.md`): that one invocation runs with `cwd` set to the font file's directory and `--font-file` gets
+  just the bare file name, which needs no escaping.

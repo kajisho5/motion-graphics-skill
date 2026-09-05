@@ -194,7 +194,7 @@ class FfmpegSkill:
     def cancel(self) -> None:
         self._cancelled = True
 
-    def _popen(self, argv: Sequence[str], timeout: Optional[float]) -> Tuple[int, str, str, float]:
+    def _popen(self, argv: Sequence[str], timeout: Optional[float], cwd: Optional[str] = None) -> Tuple[int, str, str, float]:
         for a in argv:
             if not isinstance(a, str) or "\x00" in a:
                 raise MotionGraphicsError("INTERNAL_ERROR", "argv element is not a clean string")
@@ -203,7 +203,7 @@ class FfmpegSkill:
         t0 = time.monotonic()
         try:
             proc = subprocess.Popen(list(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     text=True, errors="replace", env=_clean_env(), cwd=str(self.directory), **_group_kwargs())
+                                     text=True, errors="replace", env=_clean_env(), cwd=cwd or str(self.directory), **_group_kwargs())
         except FileNotFoundError as e:
             raise MotionGraphicsError("TOOL_ERROR", f"cannot start {os.path.basename(argv[0])}: {e}", {"reason": "executable_missing"}, retryable=False)
         try:
@@ -217,9 +217,9 @@ class FfmpegSkill:
             raise MotionGraphicsError("CANCELLED", "interrupted while a tool was running", {"reason": "signal"})
         return proc.returncode, out or "", err or "", round(time.monotonic() - t0, 3)
 
-    def run_tool(self, tool: str, args: Sequence[str], timeout: Optional[float] = None) -> ToolRun:
+    def run_tool(self, tool: str, args: Sequence[str], timeout: Optional[float] = None, cwd: Optional[str] = None) -> ToolRun:
         argv = [sys.executable, self.script(tool), *args, "--json"]
-        code, out, err, seconds = self._popen(argv, timeout or self.timeout)
+        code, out, err, seconds = self._popen(argv, timeout or self.timeout, cwd)
         data = _parse_json(out)
         tail = "\n".join(err.strip().splitlines()[-12:])
         run = ToolRun(tool, argv, code, data, tail, seconds, list(data.get("commands", [])) if isinstance(data.get("commands"), list) else [])

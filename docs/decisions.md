@@ -1,5 +1,25 @@
 # Architecture Decision Records
 
+## ADR-9: a custom `font_file` render runs with its own working directory, not a full path
+
+**Decision**: when an element uses a custom `font_file`, `executor._argv()` passes ffmpeg-skill's `--font-file`
+a bare file name (e.g. `font.ttf`, no path at all) and `adapter.FfmpegSkill.run_tool()` runs that one invocation
+with `cwd` set to the font file's own directory, instead of ffmpeg-skill's usual working directory. Every other
+path in the same command (`stage_input`, `stage_output`, `--image`) stays a full absolute path, unaffected by the
+`cwd` change, and `load_brand(None)` (the only other thing these scripts might read relative to `cwd`) never
+touches the file system when `--brand` is not given, which this skill never passes.
+
+**Why**: `ffmpeg-skill/graphics` and `ffmpeg-skill/overlay` embed `--font-file` into a `fontfile=...` *filter*
+option (drawtext), escaping it themselves (backslash-escape the colon, forward-slash the separators). On some
+Windows ffmpeg builds this still fails to parse a drive-letter path there ("No option name near ...", "Invalid
+argument") -- confirmed by reproducing the exact same failure regardless of which slash convention or escaping
+this skill fed it, since ffmpeg-skill's own escaping function round-trips any input through `pathlib.Path` and
+always re-normalises it to the same canonical form before escaping. Since a relative, cwd-based file name needs
+no escaping at all, giving the invocation a working directory that already contains the font sidesteps the
+Windows-specific parsing failure entirely, without this skill building the filter string itself (ADR-1) and
+without touching ffmpeg-skill. It generalises to any future ffmpeg build with the same quirk, not just the one
+observed in CI.
+
 ## ADR-1: No raw ffmpeg filters, ever, at the request boundary
 
 **Decision**: `filter`, `filters`, `filter_complex`, `vf`, `af`, `command`, `commands`, `argv`, `args`, `cmd`,

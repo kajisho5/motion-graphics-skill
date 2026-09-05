@@ -157,9 +157,9 @@ class Executor:
             for stale in (target, manifest_path) if manifest_path else (target,):
                 if stale and stale.exists() and stale != output_path:
                     stale.unlink()
-            tool, argv = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset)
+            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset)
             try:
-                run = self.skill.run_tool(tool, argv, self.timeout)
+                run = self.skill.run_tool(tool, argv, self.timeout, tool_cwd)
                 artifact_meta = self._validate_stage_output(target, el, width, height, prev_duration)
             except MotionGraphicsError:
                 self._remove_partial(target)
@@ -215,9 +215,10 @@ class Executor:
             params["font"] = font.to_provenance()
         return params
 
-    # ---- argv construction: every value is a validated number, a closed-vocabulary string, or a resolved path
+    # ---- argv construction: every value is a validated number, a closed-vocabulary string, or a resolved path.
+    # Returns (tool, argv, cwd): cwd is None except for a custom font_file (see the comment below).
     def _argv(self, el: GraphicsElement, stage_input: str, stage_output: str, asset: Optional[Dict[str, Any]],
-              font: Optional[ResolvedFont], crf: int, preset: str) -> Tuple[str, List[str]]:
+              font: Optional[ResolvedFont], crf: int, preset: str) -> Tuple[str, List[str], Optional[str]]:
         p = el.parameters
         spec = ELEMENT_TYPES[el.type]
         if spec["tool"] == "graphics":
@@ -235,13 +236,14 @@ class Executor:
                 argv += ["--text-color", p["text_color"]]
             if p.get("primary_color"):
                 argv += ["--primary", p["primary_color"]]
-            return "graphics", argv
+            return "graphics", argv, None
 
         argv = [stage_input, "-o", stage_output, "--position", p["position"], "--margin", str(p["margin"]),
                 "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--opacity", fmt_number(p["opacity"]),
                 "--crf", str(crf), "--preset", preset]
         if el.animation is not None and el.animation.kind == "fade":
             argv += ["--fade", fmt_number(el.animation.parameters["duration"])]
+        cwd: Optional[str] = None
         if el.type == "text_overlay":
             argv += ["--text", p["text"], "--font-size", str(p["font_size"]), "--font-color", p["font_color"],
                      "--border", str(p["border_width"]), "--border-color", p["border_color"]]
@@ -251,7 +253,18 @@ class Executor:
                 if font.kind == "system":
                     argv += ["--font", font.engine_arg["font"]]
                 else:
-                    argv += ["--font-file", font.engine_arg["font_file"]]
+                    # ffmpeg-skill embeds --font-file into a `fontfile=...` *filter* option (drawtext) by
+                    # backslash-escaping special characters; a Windows drive letter's colon still trips up some
+                    # ffmpeg builds there regardless of slash style (observed: "No option name near ...",
+                    # "Invalid argument" -- the identical failure whether the colon reaches it escaped or not).
+                    # Sidestepping the drive letter entirely is the fix that actually generalises: run this one
+                    # invocation with its cwd set to the font's own directory and pass just the bare file name,
+                    # which needs no escaping at all. stage_input/stage_output/--image are always absolute paths
+                    # elsewhere in this argv, so they are unaffected by the cwd change.
+                    assert font.font_file_path is not None
+                    font_path = Path(font.font_file_path)
+                    argv += ["--font-file", font_path.name]
+                    cwd = str(font_path.parent)
         else:  # image_overlay
             assert asset is not None
             argv += ["--image", asset["path"]]
@@ -259,7 +272,7 @@ class Executor:
                 argv += ["--scale", str(p["scale_width"])]
             if p.get("scale_percent") is not None:
                 argv += ["--scale-percent", fmt_number(p["scale_percent"])]
-        return "overlay", argv
+        return "overlay", argv, cwd
 
     # ---- reuse
     def _reusable(self, identity: str, out_path: Path, manifest_path: Path) -> bool:
