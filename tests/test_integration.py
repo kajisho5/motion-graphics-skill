@@ -17,7 +17,7 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import Executor
 from motion_graphics.security import PathPolicy
 
-from conftest import bug_element, chapter_element, image_overlay_element, request_doc, text_overlay_element, title_element, run_cli, one_json
+from conftest import bug_element, chapter_element, image_overlay_element, progress_element, request_doc, text_overlay_element, title_element, run_cli, one_json
 
 
 def _executor(skill_dir, workspace) -> Executor:
@@ -168,6 +168,38 @@ def test_chapter_draws_at_its_declared_corner(skill_dir, workspace, position, cr
     luma_with_chapter = _luma(out, 1.0, crop)
     luma_source = _luma(str(workspace / "video.mp4"), 1.0, crop)
     assert abs(luma_with_chapter - luma_source) > 3.0, f"chapter did not measurably change the pixels at its declared {position} corner"
+
+
+# ---- progress
+def test_progress_renders_valid_video(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([progress_element(start=0, end=4)], output="out/progress.mp4"))
+    assert resp["ok"] is True
+    out = Path(resp["output"]["path"])
+    assert out.is_file() and out.stat().st_size > 0
+    assert resp["output"]["sha256"] == __import__("hashlib").sha256(out.read_bytes()).hexdigest()
+    meta = _probe(skill_dir, str(out))
+    assert meta["video"]["width"] == 320 and meta["video"]["height"] == 180
+
+
+def test_progress_bar_fills_left_to_right_over_time(skill_dir, workspace):
+    # The bar is 3px tall along the very bottom row on this 320x180 fixture, filling left-to-right over
+    # [start, end]. Crop windows (near the left edge, which fills almost immediately, vs. near the right edge,
+    # which only fills near the end) and the thresholds below are measured empirically against the actual
+    # rendered output at several points in time, not guessed from the filter expression alone.
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([progress_element(start=0, end=4)], output="out/progress_fill.mp4"))
+    assert resp["ok"] is True
+    out = resp["output"]["path"]
+    early, late = "20:3:10:177", "20:3:250:177"
+    src_early = _luma(str(workspace / "video.mp4"), 1.0, early)
+    src_late = _luma(str(workspace / "video.mp4"), 1.0, late)
+    early_at_1s = abs(_luma(out, 1.0, early) - src_early)
+    late_at_1s = abs(_luma(out, 1.0, late) - src_late)
+    late_at_39s = abs(_luma(out, 3.9, late) - src_late)
+    assert early_at_1s > 50.0, "the bar had not measurably reached the early region 1s into a 4s fill"
+    assert late_at_1s < 30.0, "the bar had already reached the late region well before it should have"
+    assert late_at_39s > 50.0, "the bar had not measurably reached the late region by the very end of the fill"
 
 
 def test_missing_image_asset_fails(skill_dir, workspace):
