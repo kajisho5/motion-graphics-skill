@@ -269,3 +269,109 @@ and the ecosystem registry's `validate_provides_entry()`, both still pass with `
 `CLAUDE.md`'s reproduction recipe). After this PR, `shape` (ADR-8) is the only element type from the original
 design brief's full list still unimplemented, and it is blocked on `ffmpeg-skill` gaining a capability this
 repository does not have the authority to add itself.
+
+## ADR-15: `video_overlay` is implemented; its animation is `"none"`, not `"configurable"`, and it gets its own Capability id
+
+**Decision**: `video_overlay` (a second video composited as a picture-in-picture layer, with optional chroma-key
+(green-screen) removal, `ffmpeg-skill/overlay --video`/`--chromakey*`) is implemented as a new element type. Its
+typed parameters mirror `image_overlay`'s position/margin/scale/opacity model almost exactly (`video_path` instead
+of `image_path`; the same 9-way `position` type, not `bug`/`chapter`'s corner-only enum) plus three new ones:
+`chromakey` (a `color`, optional), `chromakey_similarity` and `chromakey_blend` (both `number`, optional, bounded
+to the same ranges `ffmpeg-skill/overlay` itself validates). Its `animation` is `"none"`, and its Capability id is
+its own, `motion_graphics.video_overlay` (not shared with `text_overlay`/`image_overlay`'s `motion_graphics.overlay`).
+
+**Why this closes issue #10 item 2**: `ffmpeg-skill` 0.11.0 shipped `overlay.py --video` (position/scale/opacity,
+same knobs as `--image`) and `--chromakey`/`--chromakey-similarity`/`--chromakey-blend`, but this Skill's adapter
+only ever called the `--image`/`--text` branches — a capability ownership gap this Skill's own README already
+claims as its territory (titles, lower-thirds, overlays, watermarks; webcam/screen-recording PiP and green-screen
+title sequences are motion-graphics work, not video-editing's cut/trim job).
+
+**Why the animation is `"none"`, not `"configurable"`**: reading `ffmpeg-skill/overlay.py`'s `--video` branch line
+by line (not assumed to mirror `--image` by analogy) shows it never references `args.fade`, `alpha_expr`, or any
+fade filter term at all — only the `--image` and `--text` branches do. Exposing a configurable `fade` here would be
+exactly the kind of dishonest metadata ADR-12 already ruled out for `chapter`'s `text_color`: a parameter that
+silently has zero effect on the rendered output. `test_argv_for_video_overlay_never_emits_fade` and
+`test_video_overlay_does_not_accept_configurable_animation` in `tests/test_unit.py` pin this down.
+
+**Why its own Capability id, not `motion_graphics.overlay`**: that matrix already treats `text_overlay`/
+`image_overlay` as one capability ("free-form text, image/logo overlay") because they are the same kind of thing
+composited two different ways. A video-on-video PiP/chroma-key layer is a materially different capability, not a
+third variant of "free-form text, image/logo overlay" — same reasoning `bug`/`chapter`/`progress`/`countdown`
+already applied when each got its own id (ADR-11). `motion_graphics.video_overlay` is this repository's own
+provisional choice, same status as those four (ADR-10).
+
+**Why no fixed image-extension-style whitelist for `video_path`**: `image_overlay.parameters.image_path` is
+checked against a narrow, honest extension list (`executor.IMAGE_EXTENSIONS`, PNG/JPG only) because that
+genuinely covers the vast majority of still-image overlay assets. A PiP layer's own container can legitimately be
+almost anything `ffmpeg-skill/overlay --video` itself accepts (mp4/mov/mkv/webm/...) — there is no similarly
+narrow, honest list to enforce here without either rejecting valid inputs or inventing an arbitrary one (ADR-12:
+never guess). Instead `Executor.response()` resolves and probes `video_path` up front, alongside every other
+asset/font (the existing "a missing asset must fail before anything renders" pass), and requires the probed result
+to actually have a video stream — the same real check `ffmpeg-skill/overlay --video` makes itself, just performed
+early enough to fail before any stage renders rather than mid-pipeline.
+
+**Required capabilities include `filter:chromakey`, unconditionally**: `chromakey` is optional per element
+instance, but `required_capabilities` is the union of everything any parameter combination of a type could need
+(the same convention `filter:colorchannelmixer` already follows for `image_overlay`, needed only when
+`opacity < 1`), not "always exercised". Unlike `filter:overlay`/`filter:scale`/`filter:colorchannelmixer`
+(never named by any `ffmpeg-skill` tool's own required/optional capability list, so `doctor` can only ever report
+them `"unknown"` — see the regression test for this in `test_unit.py`), `ffmpeg-skill/overlay`'s own contract
+*does* declare `filter:chromakey` as an optional capability (`"when": "--chromakey"`), so `ffmpeg-skill doctor`
+actually probes for it — `doctor.CORE_CAPABILITIES` gained `filter:chromakey` so this Skill's own `doctor` reports
+real `supported`/`unsupported` for it instead of falling through to `"unknown"` by omission.
+
+## ADR-16: `document.options.audio_stream` selects the source's audio track for every stage
+
+**Decision**: `document.options.audio_stream` (optional integer, bounded `[0, 63]`) is threaded through
+`executor._argv()` to `--audio-stream` on every `graphics`/`overlay` invocation in the pipeline, and included in
+each stage's identity hash. Omitted entirely (no `--audio-stream` flag at all) when not given, which is exactly
+the previous behaviour (both tools default to track 0).
+
+**Why closes issue #10 item 3**: `ffmpeg-skill` 0.12.0 added `--audio-stream N` to exactly the two tools this
+Skill delegates to, but neither `FLAGS_USED` nor `executor._argv()` ever emitted it — a multi-audio-track source
+(dubbed languages, M&E stems) silently got track 0 with no way to select otherwise.
+
+**Why a document-level option, not a per-element parameter**: there is only ever one source video per document
+(`document.video.path`) — every stage in the pipeline reads from either that source or the previous stage's own
+output, and `ffmpeg-skill/graphics`/`overlay` both apply `--audio-stream` against whatever their own `-i` input
+actually is. A per-element `audio_stream` would let a caller ask for two different tracks of the *same* source
+across two elements, which has no coherent meaning (the final output has exactly one audio track); a single,
+document-wide choice matches `crf`/`preset`'s existing shape and the real constraint.
+
+**Why bounded `[0, 63]` here and not validated against the actual track count**: unlike `crf`/`preset` (whose
+valid range is fixed and known in advance), whether a given value is valid depends on how many audio streams the
+*real* input actually has — knowable only by probing it, which `model.parse_request()` deliberately never does
+(no file-system access at the request-parsing layer). The bound here only catches an integer typo structurally;
+`ffmpeg-skill/{graphics,overlay}` both already `die` with a clear message when `--audio-stream` exceeds the real
+input's track count, so an out-of-range value for the real input surfaces as a real `TOOL_ERROR` from the delegate
+tool itself, not a guess made here (ADR-12). `63` is a generous ceiling in the same spirit as `countdown.count_from`'s
+`[1, 60]` (ADR-14) — no real container carries anywhere near this many audio tracks.
+
+## ADR-17: `dropped_non_av_streams` is read per stage and surfaced, never silently discarded
+
+**Decision**: `adapter.ToolRun` gains a `dropped_non_av_streams: Optional[bool]` field, populated from each tool
+response when the field is present and a real `bool` (`None` otherwise — an older `ffmpeg-skill` or a tool that
+never reports it is not misrepresented as `false`). `executor.StageResult` carries the same field through to
+`to_dict()`, included only when not `None`; `Executor.response()` adds one `warnings[]` entry per stage where it
+was `true`.
+
+**Why**: `ffmpeg-skill` 0.12.1 added `dropped_non_av_streams` to `graphics.py`/`overlay.py`'s `--json` response —
+`true` only when that tool's own subtitle/data-stream preservation attempt failed and it fell back to a
+video+audio-only re-encode for that invocation, silently losing the source's subtitle/data stream(s) for that
+stage. `adapter.FfmpegSkill.run_tool()` already captured the full response dict, but `executor.py` only ever read
+`run.commands` from it — the signal reached this process and was then thrown away. Contradicts this Skill's own
+stated philosophy (ADR-12: "never guess, never silently repair, never claim support that isn't backed by a real
+renderer") in the specific direction of never claiming a *loss* did not happen, just as much as never claiming a
+capability exists that doesn't.
+
+**Why per-operation AND top-level, not just one or the other**: `operations[].dropped_non_av_streams` answers
+"which stage, specifically" (useful for a multi-element pipeline where only one stage's own subtitle preservation
+failed); the top-level `warnings[]` entry is what a caller reading only the top level of the response — the same
+level `ok`/`status`/`output` live at — would actually see without inspecting every operation. Neither one alone
+matches how the rest of this response is already shaped (`operations[]` is per-stage detail; `warnings[]` already
+existed as the top-level catch-all, previously always empty).
+
+**Why `false` is never itself a warning**: only an actual, observed loss (`true`) is worth surfacing — reporting
+`dropped_non_av_streams: false` as a warning on every single render would train a caller to ignore `warnings[]`
+altogether, the opposite of what a warning is for. `test_dropped_non_av_streams_false_is_not_reported_as_a_warning`
+in `tests/test_unit.py` pins this down.

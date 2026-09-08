@@ -8,7 +8,8 @@ from motion_graphics.fonts import DEFAULT_FONT_ID, FONT_REGISTRY, resolve_font
 from motion_graphics.model import ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES, parse_request
 from motion_graphics.security import PathPolicy, check_filename
 
-from conftest import bug_element, chapter_element, countdown_element, progress_element, request_doc, text_overlay_element, title_element
+from conftest import (bug_element, chapter_element, countdown_element, progress_element, request_doc,
+                      text_overlay_element, title_element, video_overlay_element)
 
 
 # ---- request parsing / structure
@@ -304,6 +305,92 @@ def test_countdown_does_not_accept_configurable_animation():
     assert e.value.code == "UNSUPPORTED_OPERATION"
 
 
+# ---- video_overlay (ffmpeg-skill/overlay --video, --chromakey* -- ffmpeg-skill 0.11.0, ADR-15)
+def test_video_overlay_parses_with_defaults():
+    doc = parse_request(request_doc([video_overlay_element()]))
+    el = doc.elements[0]
+    assert el.type == "video_overlay"
+    assert el.parameters["video_path"] == "video_short.mp4"
+    assert el.parameters["position"] == "bottom-right"
+    assert el.parameters["margin"] == 24
+    assert el.parameters["opacity"] == 1.0
+    assert el.parameters["chromakey_similarity"] == 0.15
+    assert el.parameters["chromakey_blend"] == 0.05
+    assert "chromakey" not in el.parameters  # no default -- optional, and absent unless the caller sets it
+
+
+def test_video_overlay_requires_video_path():
+    d = request_doc([{"id": "pip1", "type": "video_overlay", "start": 0, "end": 1, "parameters": {}}])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_video_overlay_accepts_full_position_type_unlike_bug_chapter():
+    # video_overlay mirrors image_overlay's 9-way `position` type (not bug/chapter's 4-corner-only enum) --
+    # ffmpeg-skill/overlay's --video branch shares the exact same position_exprs() as --image.
+    doc = parse_request(request_doc([video_overlay_element(position={"x": 10, "y": -20})]))
+    assert doc.elements[0].parameters["position"] == "10,-20"
+    doc2 = parse_request(request_doc([video_overlay_element(position="center")]))
+    assert doc2.elements[0].parameters["position"] == "center"
+
+
+def test_video_overlay_accepts_scale_and_opacity_like_image_overlay():
+    doc = parse_request(request_doc([video_overlay_element(scale_width=200, opacity=0.5)]))
+    assert doc.elements[0].parameters["scale_width"] == 200
+    assert doc.elements[0].parameters["opacity"] == 0.5
+
+
+def test_video_overlay_accepts_chromakey_parameters():
+    doc = parse_request(request_doc([video_overlay_element(chromakey="00ff00", chromakey_similarity=0.3, chromakey_blend=0.2)]))
+    p = doc.elements[0].parameters
+    assert p["chromakey"] == "00ff00" and p["chromakey_similarity"] == 0.3 and p["chromakey_blend"] == 0.2
+
+
+@pytest.mark.parametrize("bad", [0, -0.1, 1.1])
+def test_video_overlay_rejects_out_of_range_chromakey_similarity(bad):
+    d = request_doc([video_overlay_element(chromakey="green", chromakey_similarity=bad)])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize("bad", [-0.1, 1.1])
+def test_video_overlay_rejects_out_of_range_chromakey_blend(bad):
+    d = request_doc([video_overlay_element(chromakey="green", chromakey_blend=bad)])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
+def test_video_overlay_does_not_accept_configurable_animation():
+    # ffmpeg-skill/overlay's --video branch never reads args.fade at all (only --image/--text do) -- accepting a
+    # `fade` animation here would silently do nothing to the rendered output (see model.ELEMENT_TYPES comment).
+    d = request_doc([{**video_overlay_element(), "animation": {"kind": "fade", "parameters": {"duration": 0.3}}}])
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "UNSUPPORTED_OPERATION"
+
+
+# ---- document.options.audio_stream (ffmpeg-skill/{graphics,overlay} --audio-stream, ffmpeg-skill 0.12.0)
+def test_audio_stream_option_defaults_to_none():
+    doc = parse_request(request_doc([title_element()]))
+    assert doc.options["audio_stream"] is None
+
+
+def test_audio_stream_option_accepts_valid_integer():
+    doc = parse_request(request_doc([title_element()], options={"audio_stream": 1}))
+    assert doc.options["audio_stream"] == 1
+
+
+@pytest.mark.parametrize("bad", [-1, 64, 1.5, "1", True, False])
+def test_audio_stream_option_rejects_invalid_values(bad):
+    d = request_doc([title_element()], options={"audio_stream": bad})
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(d)
+    assert e.value.code == "INVALID_REQUEST"
+
+
 # ---- position / color
 @pytest.mark.parametrize("position", ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"])
 def test_named_positions_accepted(position):
@@ -538,6 +625,25 @@ def test_capability_not_tracked_by_ffmpeg_skill_at_all_is_unknown_not_unsupporte
     assert caps["filter:drawtext"] == "supported"
 
 
+def test_capability_chromakey_is_tracked_unlike_overlay_scale_colorchannelmixer():
+    # Unlike filter:overlay/scale/colorchannelmixer (never named by any ffmpeg-skill tool's own required/optional
+    # capability list -- see the regression above), ffmpeg-skill/overlay's own contract DOES declare
+    # filter:chromakey as an optional capability ("when": "--chromakey"), so ffmpeg-skill's own doctor actually
+    # probes for it -- it must read "supported"/"unsupported" from real detection, not fall back to "unknown".
+    skill_info = type("Info", (), {"supported": True})()
+    ffdoc_present = {"ffmpeg": "6.1.1", "ffprobe": "6.1.1", "available": ["filter:drawtext", "filter:chromakey", "encoder:libx264", "encoder:aac"], "missing": [], "unknown": []}
+    assert capability_status(skill_info, ffdoc_present)["filter:chromakey"] == "supported"
+    ffdoc_absent = {"ffmpeg": "6.1.1", "ffprobe": "6.1.1", "available": ["filter:drawtext", "encoder:libx264", "encoder:aac"], "missing": [], "missing_optional": ["filter:chromakey"], "unknown": []}
+    assert capability_status(skill_info, ffdoc_absent)["filter:chromakey"] == "unsupported"
+
+
+def test_video_overlay_required_capabilities_include_chromakey():
+    assert "filter:chromakey" in ELEMENT_TYPES["video_overlay"]["required_capabilities"]
+    caps_missing_chromakey = {"ffmpeg-skill": "supported", "ffmpeg": "supported", "ffprobe": "supported", "filter:overlay": "supported",
+                              "filter:scale": "supported", "filter:colorchannelmixer": "supported", "filter:chromakey": "unsupported", "encoder:libx264": "supported"}
+    assert element_type_status(caps_missing_chromakey)["video_overlay"]["status"] == "unsupported"
+
+
 def test_animation_status_reflects_worst_of_every_applicable_element_type():
     # fade applies to both text_overlay and image_overlay (model.ELEMENT_TYPES); if either is unsupported the
     # animation itself must be reported unsupported, not just reflect text_overlay's own status.
@@ -615,6 +721,85 @@ def test_argv_for_title_never_sets_cwd():
     assert cwd is None
 
 
+# ---- executor: video_overlay argv (ffmpeg-skill/overlay --video, --chromakey*)
+def _video_overlay_element_obj(**extra):
+    doc = _parse_request(request_doc([{"id": "pip1", "type": "video_overlay", "start": 0, "end": 2, "parameters": {"video_path": "webcam.mp4", **extra}}]))
+    return doc.elements[0]
+
+
+def test_argv_for_video_overlay_uses_video_flag_not_image_or_text():
+    ex = Executor(PathPolicy("."), skill=None)
+    el = _video_overlay_element_obj()
+    asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
+    tool, argv, cwd = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
+    assert tool == "overlay"
+    assert cwd is None
+    assert "--video" in argv and argv[argv.index("--video") + 1] == "/resolved/webcam.mp4"
+    assert "--image" not in argv and "--text" not in argv
+
+
+def test_argv_for_video_overlay_never_emits_fade():
+    # video_overlay's animation is "none" (model.ELEMENT_TYPES), so el.animation is always None here -- pinning
+    # down that _argv() itself also never emits --fade for this type, matching ffmpeg-skill/overlay's --video
+    # branch, which never reads args.fade at all.
+    ex = Executor(PathPolicy("."), skill=None)
+    el = _video_overlay_element_obj()
+    assert el.animation is None
+    asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
+    _, argv, _ = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
+    assert "--fade" not in argv
+
+
+def test_argv_for_video_overlay_with_chromakey_includes_chromakey_flags():
+    ex = Executor(PathPolicy("."), skill=None)
+    el = _video_overlay_element_obj(chromakey="00ff00", chromakey_similarity=0.3, chromakey_blend=0.2)
+    asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
+    _, argv, _ = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
+    assert argv[argv.index("--chromakey") + 1] == "00ff00"
+    assert argv[argv.index("--chromakey-similarity") + 1] == "0.3"
+    assert argv[argv.index("--chromakey-blend") + 1] == "0.2"
+
+
+def test_argv_for_video_overlay_without_chromakey_omits_chromakey_flags():
+    ex = Executor(PathPolicy("."), skill=None)
+    el = _video_overlay_element_obj()
+    asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
+    _, argv, _ = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
+    assert "--chromakey" not in argv and "--chromakey-similarity" not in argv and "--chromakey-blend" not in argv
+
+
+def test_argv_for_video_overlay_passes_scale_width():
+    ex = Executor(PathPolicy("."), skill=None)
+    el = _video_overlay_element_obj(scale_width=480)
+    asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
+    _, argv, _ = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
+    assert argv[argv.index("--scale") + 1] == "480"
+
+
+# ---- executor: document.options.audio_stream threaded to every graphics/overlay invocation
+def test_argv_omits_audio_stream_when_not_set():
+    ex = Executor(PathPolicy("."), skill=None)
+    doc = _parse_request(request_doc([title_element()]))
+    _, argv, _ = ex._argv(doc.elements[0], "in.mp4", "out.mp4", None, None, crf=18, preset="medium")
+    assert "--audio-stream" not in argv
+
+
+def test_argv_includes_audio_stream_for_graphics_tool_when_set():
+    ex = Executor(PathPolicy("."), skill=None)
+    doc = _parse_request(request_doc([title_element()]))
+    tool, argv, _ = ex._argv(doc.elements[0], "in.mp4", "out.mp4", None, None, crf=18, preset="medium", audio_stream=1)
+    assert tool == "graphics"
+    assert argv[argv.index("--audio-stream") + 1] == "1"
+
+
+def test_argv_includes_audio_stream_for_overlay_tool_when_set():
+    ex = Executor(PathPolicy("."), skill=None)
+    el = _text_overlay_element_obj(text="hi")
+    tool, argv, _ = ex._argv(el, "in.mp4", "out.mp4", None, None, crf=18, preset="medium", audio_stream=0)
+    assert tool == "overlay"
+    assert argv[argv.index("--audio-stream") + 1] == "0"
+
+
 # ---- deterministic identity (STEP 13 / review section 7): same input -> same identity, and every field the
 # spec says matters (asset content, font choice, animation) actually changes it. Pure -- no ffmpeg-skill needed.
 def _image_overlay_element_obj(**extra):
@@ -632,6 +817,21 @@ def test_identity_parameters_never_contain_a_raw_path():
 
 def test_identity_parameters_differ_for_different_image_content():
     el = _image_overlay_element_obj()
+    params_a = Executor._identity_parameters(el, {"sha256": "a" * 64, "size": 100}, None)
+    params_b = Executor._identity_parameters(el, {"sha256": "b" * 64, "size": 100}, None)
+    assert stable_hash(params_a) != stable_hash(params_b)
+
+
+def test_identity_parameters_never_contain_a_raw_path_for_video_overlay():
+    el = _video_overlay_element_obj()
+    asset = {"sha256": "c" * 64, "size": 456}
+    params = Executor._identity_parameters(el, asset, None)
+    assert params["video_path"] == {"sha256": "c" * 64, "size": 456}
+    assert "webcam.mp4" not in str(params)
+
+
+def test_identity_parameters_differ_for_different_video_content():
+    el = _video_overlay_element_obj()
     params_a = Executor._identity_parameters(el, {"sha256": "a" * 64, "size": 100}, None)
     params_b = Executor._identity_parameters(el, {"sha256": "b" * 64, "size": 100}, None)
     assert stable_hash(params_a) != stable_hash(params_b)
@@ -669,3 +869,83 @@ def test_stage_identity_chains_to_previous_stage():
     from_a = stable_hash({**base, "previous": "identity-of-stage-a"})
     from_b = stable_hash({**base, "previous": "identity-of-stage-b"})
     assert from_a != from_b  # a document that differs only in an earlier stage must not collide downstream
+
+
+def test_stage_identity_differs_for_different_audio_stream():
+    # document.options.audio_stream changes which audio track ffmpeg-skill actually keeps -- two otherwise
+    # identical stages selecting a different track must not collide on cache identity (they render different
+    # bytes; ADR-16).
+    base = {"skill_version": "0.1.0", "tool_versions": {}, "index": 0, "previous": "x", "type": "title",
+            "start": 0.0, "end": 2.0, "animation": None, "parameters": {}, "crf": 18, "preset": "medium"}
+    default_track = stable_hash({**base, "audio_stream": None})
+    track_0 = stable_hash({**base, "audio_stream": 0})
+    track_1 = stable_hash({**base, "audio_stream": 1})
+    assert len({default_track, track_0, track_1}) == 3
+
+
+# ---- dropped_non_av_streams surfaced (ffmpeg-skill 0.12.1, ADR-17): a fake FfmpegSkill-shaped object drives
+# Executor.response() end to end with no real ffmpeg/ffmpeg-skill process at all, so this pins down the plumbing
+# (adapter.ToolRun -> executor.StageResult.to_dict() -> top-level warnings[]) deterministically and fast, without
+# needing to actually reproduce ffmpeg-skill's own subtitle-preservation fallback to get a True value.
+from pathlib import Path  # noqa: E402
+
+from motion_graphics.adapter import ToolRun  # noqa: E402
+
+
+class _FakeFfmpegSkillForDroppedStreams:
+    """Just enough of adapter.FfmpegSkill's surface for Executor.response() to run one title stage: probe()
+    always reports a fixed, matching video/duration (so output validation passes without real media), and
+    run_tool() writes a placeholder file at the requested output path and returns a canned dropped_non_av_streams
+    value instead of actually invoking ffmpeg-skill."""
+
+    def __init__(self, dropped: bool):
+        self.dropped = dropped
+
+    def probe(self, path, timeout=None):
+        return {"video": {"width": 4, "height": 4}, "duration": 3.0, "audio_streams": []}
+
+    def run_tool(self, tool, args, timeout=None, cwd=None):
+        target = Path(args[args.index("-o") + 1])
+        target.write_bytes(b"not real media, just needs to exist and be non-empty")
+        return ToolRun(tool, list(args), 0, {"status": "completed"}, "", 0.01, [], dropped_non_av_streams=self.dropped)
+
+
+def _run_one_title_stage_with_fake_skill(tmp_path, dropped: bool):
+    (tmp_path / "video.mp4").write_bytes(b"not real media either -- probe() above never reads it")
+    policy = PathPolicy(str(tmp_path))
+    ex = Executor(policy, _FakeFfmpegSkillForDroppedStreams(dropped), tool_versions={"ffmpeg-skill": "0.12.2"})
+    return ex.response(request_doc([title_element()], output="out.mp4"))
+
+
+def test_dropped_non_av_streams_true_surfaces_on_operation_and_as_a_warning(tmp_path):
+    resp = _run_one_title_stage_with_fake_skill(tmp_path, dropped=True)
+    assert resp["ok"] is True
+    assert resp["operations"][0]["dropped_non_av_streams"] is True
+    assert any("dropped_non_av_streams" in w for w in resp["warnings"])
+
+
+def test_dropped_non_av_streams_false_is_not_reported_as_a_warning(tmp_path):
+    # Never claim a problem that did not happen: dropped_non_av_streams: false must not itself become a warning
+    # (only a True value -- an actual, observed loss -- is worth surfacing).
+    resp = _run_one_title_stage_with_fake_skill(tmp_path, dropped=False)
+    assert resp["ok"] is True
+    assert resp["operations"][0]["dropped_non_av_streams"] is False
+    assert resp["warnings"] == []
+
+
+def test_dropped_non_av_streams_absent_from_operation_dict_when_never_reported(tmp_path):
+    # An older ffmpeg-skill's response (or any tool response lacking the field) must not be misrepresented as an
+    # explicit `false` -- StageResult.to_dict() omits the key entirely rather than guessing (ADR-12/ADR-17: never
+    # claim support that isn't backed by a real renderer).
+    class _NoFieldSkill(_FakeFfmpegSkillForDroppedStreams):
+        def run_tool(self, tool, args, timeout=None, cwd=None):
+            target = Path(args[args.index("-o") + 1])
+            target.write_bytes(b"placeholder")
+            return ToolRun(tool, list(args), 0, {"status": "completed"}, "", 0.01, [])  # dropped_non_av_streams left at its default (None)
+
+    (tmp_path / "video.mp4").write_bytes(b"placeholder")
+    policy = PathPolicy(str(tmp_path))
+    ex = Executor(policy, _NoFieldSkill(False), tool_versions={"ffmpeg-skill": "0.9.1"})
+    resp = ex.response(request_doc([title_element()], output="out.mp4"))
+    assert "dropped_non_av_streams" not in resp["operations"][0]
+    assert resp["warnings"] == []

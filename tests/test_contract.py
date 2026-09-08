@@ -4,6 +4,7 @@ shape, not for specific values (those are covered by test_integration.py against
 import json
 
 from motion_graphics import VERSION
+from motion_graphics.adapter import FLAGS_USED
 from motion_graphics.contract import skill_contract
 from motion_graphics.doctor import doctor_report
 from motion_graphics.errors import ERROR_CODES
@@ -87,6 +88,7 @@ def test_contract_provides_one_capability_entry_per_element_type():
     assert by_type["title"] == "motion_graphics.title_card"
     assert by_type["lower_third"] == "motion_graphics.lower_third"
     assert by_type["text_overlay"] == by_type["image_overlay"] == "motion_graphics.overlay"
+    assert by_type["video_overlay"] == "motion_graphics.video_overlay"
 
 
 def test_contract_forbidden_fields_present():
@@ -123,3 +125,39 @@ def test_doctor_report_never_claims_support_for_unsupported_element_types():
     for etype in UNSUPPORTED_ELEMENT_TYPES:
         assert etype not in doc["checks"]["element_types"]
     assert set(doc["checks"]["unsupported_element_types"]) == set(UNSUPPORTED_ELEMENT_TYPES)
+
+
+# ---- video_overlay / audio_stream / dropped_non_av_streams (issue #10 items 2-4)
+def test_contract_flags_used_includes_video_overlay_and_chromakey_flags():
+    # ffmpeg-skill 0.11.0's overlay.py additions: --video (PiP) and --chromakey*.
+    for flag in ("video", "chromakey", "chromakey_similarity", "chromakey_blend"):
+        assert flag in FLAGS_USED["overlay"]
+
+
+def test_contract_flags_used_includes_audio_stream_on_both_tools():
+    # ffmpeg-skill 0.12.0's --audio-stream, on both graphics.py and overlay.py.
+    assert "audio_stream" in FLAGS_USED["graphics"]
+    assert "audio_stream" in FLAGS_USED["overlay"]
+
+
+def test_contract_documents_audio_stream_flags_used():
+    c = skill_contract()
+    flags = c["ffmpeg_skill"]["flags_used"]
+    assert "audio_stream" in flags["graphics"]
+    assert "audio_stream" in flags["overlay"]
+    assert "video" in flags["overlay"] and "chromakey" in flags["overlay"]
+
+
+def test_contract_video_overlay_element_type_present_with_expected_tool():
+    c = skill_contract()
+    by_type = {t["type"]: t for t in c["element_types"]}
+    assert "video_overlay" in by_type
+    assert by_type["video_overlay"]["tool"] == "ffmpeg-skill/overlay"
+    assert by_type["video_overlay"]["animation"] == "none"
+    assert "video_path" in by_type["video_overlay"]["parameters"]
+    assert "chromakey" in by_type["video_overlay"]["parameters"]
+
+
+def test_contract_run_response_documents_warnings_key():
+    c = skill_contract()
+    assert "warnings" in c["response"]["success"]["run"]

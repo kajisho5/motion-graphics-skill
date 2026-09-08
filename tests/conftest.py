@@ -70,6 +70,10 @@ def image_overlay_element(element_id="img1", start=0.0, end=2.0, image_path="log
     return {"id": element_id, "type": "image_overlay", "start": start, "end": end, "parameters": {"image_path": image_path, **extra}}
 
 
+def video_overlay_element(element_id="pip1", start=0.0, end=2.0, video_path="video_short.mp4", **extra):
+    return {"id": element_id, "type": "video_overlay", "start": start, "end": end, "parameters": {"video_path": video_path, **extra}}
+
+
 def bug_element(element_id="bug1", start=0.0, end=2.0, title="LIVE", **extra):
     return {"id": element_id, "type": "bug", "start": start, "end": end, "parameters": {"title": title, **extra}}
 

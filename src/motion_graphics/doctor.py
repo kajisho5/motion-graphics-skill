@@ -19,7 +19,7 @@ from .model import ANIMATION_KINDS, ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUP
 from .security import PathPolicy
 
 DOCTOR_SCHEMA_ID = f"{SKILL_ID}/doctor@{DOCTOR_SCHEMA_VERSION}"
-CORE_CAPABILITIES = ("filter:drawtext", "filter:drawbox", "filter:overlay", "filter:color", "filter:scale", "filter:colorchannelmixer", "encoder:libx264", "encoder:aac")
+CORE_CAPABILITIES = ("filter:drawtext", "filter:drawbox", "filter:overlay", "filter:color", "filter:scale", "filter:colorchannelmixer", "filter:chromakey", "encoder:libx264", "encoder:aac")
 
 
 def ffmpeg_skill_doctor(skill: FfmpegSkill, timeout: float = 120.0) -> Dict[str, Any]:

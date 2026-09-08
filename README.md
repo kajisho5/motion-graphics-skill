@@ -2,7 +2,8 @@
 
 Deterministic motion-graphics **rendering execution** Skill for the AI Video Production Ecosystem. It renders a
 typed, already-decided Graphics Document — titles, lower thirds, free-form text overlays, image/logo overlays,
-persistent corner "bug" watermarks, chapter chips, a bottom progress bar, and a countdown — onto a video, through
+video-on-video picture-in-picture/chroma-key overlays, persistent corner "bug" watermarks, chapter chips, a bottom
+progress bar, and a countdown — onto a video, through
 [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill), and reports provenance.
 
 It is **not** an AI agent. It never decides what to show, when to show it, or how it should look; it never
@@ -67,13 +68,13 @@ video-production-agent                         motion-graphics-skill
 | `ffmpeg-skill` | The deterministic media-processing engine every skill above delegates actual ffmpeg execution to. |
 
 This skill never talks to ffmpeg/ffprobe directly: every render is a typed, argv-only call into ffmpeg-skill's
-`graphics.py` (title / lower-third templates) or `overlay.py` (text / image overlays). See
+`graphics.py` (title / lower-third templates) or `overlay.py` (text / image / video overlays). See
 [`docs/ffmpeg-skill.md`](docs/ffmpeg-skill.md).
 
 ## Graphics model
 
 - **GraphicsDocument**: one input video, one output path, a list of `GraphicsElement`, and render options
-  (`reuse_intermediates`, `crf`, `preset`).
+  (`reuse_intermediates`, `crf`, `preset`, `audio_stream`).
 - **GraphicsElement**: `id`, `type`, `start`/`end` (seconds, half-open, both finite), type-specific typed
   `parameters`, and an optional `animation`.
 - **Animation**: `{"kind": "fade", "parameters": {"duration": <seconds>}}` — a linear alpha fade in at `start` and
@@ -89,6 +90,7 @@ generated list:
 | `lower_third` | `ffmpeg-skill/graphics --template lower-third` | fixed slide-in/out + fade (not configurable) |
 | `text_overlay` | `ffmpeg-skill/overlay --text` | none, or a configurable `fade` |
 | `image_overlay` | `ffmpeg-skill/overlay --image` | none, or a configurable `fade` |
+| `video_overlay` | `ffmpeg-skill/overlay --video` (+ `--chromakey*`) | none at all -- `--video` never applies a fade |
 | `bug` | `ffmpeg-skill/graphics --template bug` | fixed 0.3s fade in/out (not configurable) |
 | `chapter` | `ffmpeg-skill/graphics --template chapter` | fixed 0.3s fade in/out (not configurable) |
 | `progress` | `ffmpeg-skill/graphics --template progress` | none at all -- driven entirely by its own start/end fill, no alpha |
@@ -117,6 +119,17 @@ its only parameter besides `count_from` is `primary_color` (digit color).
 `shape` is intentionally **not implemented** in this contract (see `unsupported_element_types` in the contract,
 and STEP 24 of the design brief) — no delegate tool anywhere draws an arbitrary shape without a raw ffmpeg
 filter string, so it is not published as supported by `doctor`/`contract`.
+
+## Video-on-video / picture-in-picture / chroma-key
+
+`video_overlay` composites a second video as a PiP layer, mirroring `image_overlay`'s position/margin/scale/opacity
+model almost exactly (`video_path` instead of `image_path`, the same 9-way `position` type) plus optional
+`chromakey`/`chromakey_similarity`/`chromakey_blend` (green-screen removal). `video_path` goes through the same
+PathPolicy as every other input and is probed up front (alongside every other asset) to confirm it actually has a
+video stream — there is no fixed extension whitelist here the way there is for `image_overlay` (a PiP layer's
+container can legitimately be almost anything `ffmpeg-skill/overlay --video` itself accepts). Only this element's
+own audio track, if any, is dropped; the base video's audio is unaffected. It never accepts a configurable
+`fade`: `ffmpeg-skill/overlay`'s `--video` branch never applies one at all (see `docs/decisions.md` ADR-15).
 
 ## Timeline validation
 
@@ -150,6 +163,16 @@ documents for its own `--font-file` option.
 `image_overlay.parameters.image_path` goes through PathPolicy (workspace/allowed-roots/symlink checks), must be
 `.png`/`.jpg`/`.jpeg`, and its sha256 is recorded in provenance. It is never treated as anything executable.
 
+## Multi-audio-track sources
+
+`document.options.audio_stream` (optional integer, 0-based) selects which audio track of `document.video.path`
+survives, threaded through to `--audio-stream` on every `graphics`/`overlay` invocation in the pipeline — useful
+for a dubbed-language or M&E-stem source that carries more than one audio track. Omitted entirely when not set
+(both delegate tools already default to track 0). Bounded structurally to `[0, 63]` to catch a typo; whether a
+*real* input actually has that many tracks is something only `ffmpeg-skill/{graphics,overlay}` can know, so an
+out-of-range value for the real input is a `TOOL_ERROR` from the delegate tool itself, never a guess made here
+(`docs/decisions.md` ADR-16).
+
 ## Rendering
 
 ```
@@ -159,6 +182,11 @@ Graphics Document (typed, validated)
   -> output validation (exists, non-empty, probed: video stream, resolution unchanged, duration, sha256)
   -> structured response + provenance
 ```
+
+Each stage's tool response may report `dropped_non_av_streams: true` (ffmpeg-skill 0.12.1) when that tool's own
+attempt to preserve the source's subtitle/data stream(s) failed and it fell back to a video+audio-only re-encode
+for that stage. This Skill reads it per stage (`operations[].dropped_non_av_streams`) and surfaces it as a
+top-level `warnings[]` entry whenever it was `true` — never silently discarded (`docs/decisions.md` ADR-17).
 
 This skill **never** accepts or builds a raw ffmpeg filter/`filter_complex`/command/argv/shell/executable/env from
 a request — those field names are rejected recursively anywhere in the request document
@@ -188,11 +216,13 @@ guess which one it's looking at.
 `provides` lists this Skill's element types by their cross-repository Capability id: `title` ->
 `motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, both `text_overlay` and
 `image_overlay` -> `motion_graphics.overlay` (they share one id — that matrix already treats free-form text and
-image/logo overlay as one capability, not two), and `bug`/`chapter`/`progress`/`countdown` -> `motion_graphics.bug`
-/ `motion_graphics.chapter` / `motion_graphics.progress` / `motion_graphics.countdown` respectively (this
-repository's own provisional ids — that matrix predates all four element types' implementation here, see
-`docs/decisions.md` ADR-11/ADR-12/ADR-13/ADR-14). Each entry also carries its `tool_id` (always
-`motion-graphics/run`, this Skill's one execution tool) and a `lifecycle`. This anticipates
+image/logo overlay as one capability, not two), `bug`/`chapter`/`progress`/`countdown` -> `motion_graphics.bug`
+/ `motion_graphics.chapter` / `motion_graphics.progress` / `motion_graphics.countdown` respectively, and
+`video_overlay` -> `motion_graphics.video_overlay` (its own id, not shared with `motion_graphics.overlay` — a
+video-on-video PiP/chroma-key layer is a materially different capability, see `docs/decisions.md` ADR-15). All
+five of these are this repository's own provisional ids — that matrix predates all five element types'
+implementation here (see `docs/decisions.md` ADR-11/ADR-12/ADR-13/ADR-14/ADR-15). Each entry also carries its
+`tool_id` (always `motion-graphics/run`, this Skill's one execution tool) and a `lifecycle`. This anticipates
 `kajisho5/AI-video-production-OS`'s Capability registry (`docs/CAPABILITY_MATRIX.md`, `registry/contract.py`, as
 of this writing on that repository's not-yet-merged architecture branch, not its `main`), so a registry can
 eventually resolve "who provides `motion_graphics.title_card`" without hardcoding this repository. It is additive

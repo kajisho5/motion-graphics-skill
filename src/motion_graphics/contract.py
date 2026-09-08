@@ -23,16 +23,19 @@ CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
 # shape `registry/contract.py` there actually validates, not merely against its own docs).
 # `text_overlay` and `image_overlay` are both the free-form "overlay" capability there
 # (`motion_graphics.overlay`, "free-form text, image/logo overlay"); `title` and
-# `lower_third` each get their own built-in-template id. `bug`/`chapter`/`progress`/`countdown`
-# have no id there at all -- that matrix predates these element types' implementation here --
-# so the `motion_graphics.<name>` ids below for them are this repository's own provisional
-# choices, not a verified match; reconcile them if the OS side ever assigns different ids once
-# merged.
+# `lower_third` each get their own built-in-template id. `bug`/`chapter`/`progress`/`countdown`/
+# `video_overlay` have no id there at all -- that matrix predates these element types'
+# implementation here -- so the `motion_graphics.<name>` ids below for them are this repository's
+# own provisional choices, not a verified match; reconcile them if the OS side ever assigns
+# different ids once merged. `video_overlay` gets its own id rather than folding into
+# `motion_graphics.overlay`: unlike `text_overlay`/`image_overlay` (which that matrix already
+# treats as one capability), a video-on-video picture-in-picture/chroma-key layer is a materially
+# different capability, not the same "free-form text, image/logo overlay" one (ADR-15).
 CAPABILITY_IDS: Dict[str, str] = {
     "title": "motion_graphics.title_card", "lower_third": "motion_graphics.lower_third",
     "text_overlay": "motion_graphics.overlay", "image_overlay": "motion_graphics.overlay",
     "bug": "motion_graphics.bug", "chapter": "motion_graphics.chapter", "progress": "motion_graphics.progress",
-    "countdown": "motion_graphics.countdown",
+    "countdown": "motion_graphics.countdown", "video_overlay": "motion_graphics.video_overlay",
 }
 
 
@@ -63,8 +66,8 @@ def animation_specs() -> List[Dict[str, Any]]:
 
 def skill_contract() -> Dict[str, Any]:
     tools = [{"tool_id": f"{SKILL_ID}/run", "skill_id": SKILL_ID, "version": VERSION, "role": "execution",
-              "description": "Render a typed Graphics Document (titles, lower thirds, text overlays, image/logo overlays, with fade animation) onto a "
-                              "video and write a validated artifact with provenance",
+              "description": "Render a typed Graphics Document (titles, lower thirds, text overlays, image/logo overlays, video-on-video "
+                              "picture-in-picture/chroma-key overlays, with fade animation) onto a video and write a validated artifact with provenance",
               "inputs": ["request document (stdin)"], "input_type": REQUEST_SCHEMA_ID, "produces_output": True, "writes_media": True, "deterministic": True,
               "idempotency_hint": "content_equivalent; non-final intermediates reused by deterministic operation id",
               "element_types": sorted(ELEMENT_TYPES), "supports": {"dry_run": True, "timeout": True, "cancel": True, "validate": True},
@@ -73,10 +76,10 @@ def skill_contract() -> Dict[str, Any]:
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
         "kind": "execution", "role": "motion graphics rendering (execution); not design, not decision",
-        "description": "Deterministic motion-graphics rendering execution: title cards, lower thirds, free-form text overlays and image/logo overlays, "
-                       "with built-in template animation (title/lower-third fade and slide) or a configurable linear fade (text/image overlays); "
-                       "typed Graphics Document in, a validated video artifact with provenance out. Not an AI agent: it never chooses what to show, "
-                       "when to show it, or how it should look.",
+        "description": "Deterministic motion-graphics rendering execution: title cards, lower thirds, free-form text overlays, image/logo overlays, "
+                       "and video-on-video picture-in-picture/chroma-key overlays, with built-in template animation (title/lower-third fade and slide) "
+                       "or a configurable linear fade (text/image overlays only); typed Graphics Document in, a validated video artifact with "
+                       "provenance out. Not an AI agent: it never chooses what to show, when to show it, or how it should look.",
         "repository": "https://github.com/kajisho5/motion-graphics-skill",
         "not_provided": ["AI reasoning", "design decisions", "production plans", "template or content selection", "arbitrary ffmpeg filters",
                          "arbitrary shapes without a typed delegate tool", "position/scale animation (see unsupported_animations)",
@@ -107,13 +110,14 @@ def skill_contract() -> Dict[str, Any]:
                          "tools_used": list(TOOLS_USED), "flags_used": {k: list(v) for k, v in FLAGS_USED.items()}},
         "request": {"schema": REQUEST_SCHEMA_ID, "id_pattern": ID_RE.pattern, "forbidden_fields": sorted(FORBIDDEN_KEYS),
                     "shape": {"schema": REQUEST_SCHEMA_ID, "video": {"path": "file"}, "output": {"path": "file", "overwrite?": False},
-                              "elements": [{"id": "id", "type": "title|lower_third|text_overlay|image_overlay", "start": 0, "end": 1,
+                              "elements": [{"id": "id", "type": "|".join(sorted(ELEMENT_TYPES)), "start": 0, "end": 1,
                                             "parameters": {"...": "see element_types[].parameters"}, "animation?": {"kind": "fade", "parameters": {"duration": 0.5}}}],
-                              "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium"}}},
+                              "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0}}},
         "response": {"schema": f"{SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION}",
                      "success": {
                          "run": {"ok": True, "status": "ok", "dry_run": False, "output": "{path, sha256, size, duration, width, height}",
-                                 "timeline": "[{id, type, start, end}]", "operations": "[StageResult]", "reused": "bool", "engine": {}, "provenance": {}},
+                                 "timeline": "[{id, type, start, end}]", "operations": "[StageResult]", "reused": "bool", "engine": {}, "provenance": {},
+                                 "warnings": "[str] (e.g. a stage's dropped_non_av_streams surfaced as a warning; empty when there is nothing to report)"},
                          "plan": {"ok": True, "status": "ok", "dry_run": True, "plan": "{document_id, video, output: {path}, timeline: [element + planned tool/asset/font]}",
                                   "note": "produced by `plan`, or `run --dry-run`; writes no media; has no output/operations/provenance keys"},
                          "validate": {"ok": True, "status": "ok", "dry_run": True, "validation": "{ok: true, elements: [GraphicsElement, in render order]}",
@@ -121,7 +125,8 @@ def skill_contract() -> Dict[str, Any]:
                      },
                      "failure": {"ok": False, "status": "error|cancelled", "error": {"code": "one of errors.codes", "message": "str", "retryable": "bool", "details": {}},
                                  "note": "the same failure shape for every command (validate/plan/run alike)"}},
-        "provenance": {"per_operation": ["operation_id", "type", "tool", "status", "parameters", "input_hashes", "output_hash", "seconds", "tool_commands_observed"],
+        "provenance": {"per_operation": ["operation_id", "type", "tool", "status", "parameters", "input_hashes", "output_hash", "seconds", "tool_commands_observed",
+                                        "dropped_non_av_streams (present, true, only when ffmpeg-skill's own subtitle/data-stream preservation fell back for that stage)"],
                        "per_output": ["document_id", "video (path, sha256, duration, width, height)", "assets (sha256 per element)", "fonts (font_id or font_file_hash per element)", "operations (chain)", "output_hash"],
                        "identity": "sha256 over canonical JSON of {type, parameters (asset/font paths replaced by their sha256), start, end, animation, previous stage identity, tool_versions}; no timestamps, no UUIDs, no absolute paths"},
         "work_dir": f"<workspace>/{WORK_DIR_NAME}/<document_id>/ (non-final intermediates only; the requested output is always written directly and re-validated)",
