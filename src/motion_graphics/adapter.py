@@ -47,11 +47,12 @@ TOOLS_USED = ("probe", "graphics", "overlay")
 # flags of the ffmpeg-skill input_schema this adapter emits; checked against the live contract in doctor
 FLAGS_USED: Dict[str, Tuple[str, ...]] = {
     "probe": ("inputs",),
-    "graphics": ("input", "output", "template", "name", "title", "subtitle", "start", "end", "primary", "text_color",
-                 "font", "font_file", "audio_stream", "json"),
-    "overlay": ("input", "output", "image", "text", "video", "position", "margin", "start", "end", "fade", "opacity",
-                "scale", "scale_percent", "font", "font_file", "font_size", "font_color", "border", "border_color",
-                "box", "box_color", "chromakey", "chromakey_similarity", "chromakey_blend", "audio_stream", "json"),
+    "graphics": ("input", "output", "template", "start", "end", "crf", "preset", "audio_stream", "title", "subtitle",
+                 "name", "position", "count_from", "text_color", "primary", "json"),
+    "overlay": ("input", "output", "position", "margin", "start", "end", "opacity", "crf", "preset", "audio_stream",
+                "fade", "text", "font_size", "font_color", "border", "border_color", "box", "box_color", "font",
+                "font_file", "image", "scale", "scale_percent", "video", "chromakey", "chromakey_similarity",
+                "chromakey_blend", "json"),
 }
 _ENV_KEEP = ("PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TERM",
              "SYSTEMROOT", "SYSTEMDRIVE", "PATHEXT", "COMSPEC", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA")

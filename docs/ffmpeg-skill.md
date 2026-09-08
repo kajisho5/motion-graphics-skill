@@ -37,11 +37,11 @@ so `FLAGS_USED`'s contract check alone would not have caught a stale checkout mi
 ## Flags used, by tool (`adapter.FLAGS_USED`)
 
 - `probe`: `inputs` (positional)
-- `graphics`: `input`, `output`, `template`, `name`, `title`, `subtitle`, `start`, `end`, `primary`, `text_color`,
-  `font`, `font_file`, `audio_stream`, `json`
-- `overlay`: `input`, `output`, `image`, `text`, `video`, `position`, `margin`, `start`, `end`, `fade`, `opacity`,
-  `scale`, `scale_percent`, `font`, `font_file`, `font_size`, `font_color`, `border`, `border_color`, `box`,
-  `box_color`, `chromakey`, `chromakey_similarity`, `chromakey_blend`, `audio_stream`, `json`
+- `graphics`: `input`, `output`, `template`, `start`, `end`, `crf`, `preset`, `audio_stream`, `title`, `subtitle`,
+  `name`, `position`, `count_from`, `text_color`, `primary`, `json`
+- `overlay`: `input`, `output`, `position`, `margin`, `start`, `end`, `opacity`, `crf`, `preset`, `audio_stream`,
+  `fade`, `text`, `font_size`, `font_color`, `border`, `border_color`, `box`, `box_color`, `font`, `font_file`,
+  `image`, `scale`, `scale_percent`, `video`, `chromakey`, `chromakey_similarity`, `chromakey_blend`, `json`
 
 ## `dropped_non_av_streams` (ffmpeg-skill 0.12.1)
 
