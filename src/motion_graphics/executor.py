@@ -44,12 +44,21 @@ class StageResult:
     path: str
     seconds: float
     tool_commands_observed: List[str]
+    # ffmpeg-skill 0.12.1's dropped_non_av_streams, read straight off that stage's own tool response: True only
+    # when graphics/overlay's subtitle/data-stream preservation attempt failed and it silently fell back to a
+    # video+audio-only re-encode for this stage. None for a "reused" stage (no tool ran) or an older ffmpeg-skill
+    # that never reports the field at all -- never guessed, per ADR-12/ADR-16 ("never claim support that isn't
+    # backed by a real renderer").
+    dropped_non_av_streams: Optional[bool] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"index": self.index, "element_id": self.element_id, "type": self.type, "tool": f"ffmpeg-skill/{self.tool}",
-                "status": self.status, "operation_id": self.identity, "parameters": self.parameters,
-                "input_hashes": self.input_hashes, "output_hash": self.output_hash, "seconds": self.seconds,
-                "tool_commands_observed": self.tool_commands_observed}
+        d = {"index": self.index, "element_id": self.element_id, "type": self.type, "tool": f"ffmpeg-skill/{self.tool}",
+             "status": self.status, "operation_id": self.identity, "parameters": self.parameters,
+             "input_hashes": self.input_hashes, "output_hash": self.output_hash, "seconds": self.seconds,
+             "tool_commands_observed": self.tool_commands_observed}
+        if self.dropped_non_av_streams is not None:
+            d["dropped_non_av_streams"] = self.dropped_non_av_streams
+        return d
 
 
 class Executor:
@@ -98,6 +107,18 @@ class Executor:
                     raise MotionGraphicsError("UNSUPPORTED_FORMAT", f"elements[{el.element_id}].parameters.image_path must be one of {IMAGE_EXTENSIONS}: {image_path.suffix}",
                                                {"element_id": el.element_id, "extension": image_path.suffix})
                 resolved_assets[el.element_id] = {"path": str(image_path), "sha256": sha256_file(str(image_path)), "size": image_path.stat().st_size}
+            if el.type == "video_overlay":
+                # Unlike image_overlay's fixed PNG/JPG whitelist, a PiP layer's own container can legitimately be
+                # almost anything ffmpeg-skill/overlay itself accepts (mp4/mov/mkv/webm/...); this Skill has no
+                # narrow, honest extension list to enforce the way it does for still images, so it defers to the
+                # same real check ffmpeg-skill/overlay --video makes itself (probe it, require a video stream)
+                # rather than guessing at a whitelist (ADR-12: never guess).
+                video_overlay_path = self.policy.resolve_input(el.parameters["video_path"], f"elements[{el.element_id}].parameters.video_path")
+                pip_meta = self.skill.probe(str(video_overlay_path), self.timeout)
+                if not pip_meta.get("video"):
+                    raise MotionGraphicsError("INVALID_INPUT", f"elements[{el.element_id}].parameters.video_path has no video stream: {video_overlay_path}",
+                                               {"element_id": el.element_id, "path": str(video_overlay_path)})
+                resolved_assets[el.element_id] = {"path": str(video_overlay_path), "sha256": sha256_file(str(video_overlay_path)), "size": video_overlay_path.stat().st_size}
             if el.type == "text_overlay" and el.parameters.get("font"):
                 resolved_fonts[el.element_id] = resolve_font(el.parameters["font"], self.policy)
             elif el.type == "text_overlay":
@@ -126,14 +147,14 @@ class Executor:
         prev_duration = duration
         results: List[StageResult] = []
         any_reused = False
-        crf, preset = doc.options["crf"], doc.options["preset"]
+        crf, preset, audio_stream = doc.options["crf"], doc.options["preset"], doc.options["audio_stream"]
 
         for i, el in enumerate(ordered):
             is_last = i == len(ordered) - 1
             identity_input = self._identity_parameters(el, resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id))
             identity = stable_hash({"skill_version": VERSION, "tool_versions": self.tool_versions, "index": i, "previous": prev_identity,
                                      "type": el.type, "start": el.start, "end": el.end, "animation": el.animation.to_dict() if el.animation else None,
-                                     "parameters": identity_input, "crf": crf, "preset": preset})
+                                     "parameters": identity_input, "crf": crf, "preset": preset, "audio_stream": audio_stream})
             if is_last:
                 target = output_path
                 manifest_path: Optional[Path] = None
@@ -157,7 +178,7 @@ class Executor:
             for stale in (target, manifest_path) if manifest_path else (target,):
                 if stale and stale.exists() and stale != output_path:
                     stale.unlink()
-            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset)
+            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset, audio_stream)
             try:
                 run = self.skill.run_tool(tool, argv, self.timeout, tool_cwd)
                 artifact_meta = self._validate_stage_output(target, el, width, height, prev_duration)
@@ -172,8 +193,15 @@ class Executor:
                                                       "input_hashes": [prev_identity], "output_hash": out_hash, "output_size": artifact_meta["size"],
                                                       "duration": artifact_meta["duration"], "tool": f"ffmpeg-skill/{tool}", "tool_versions": self.tool_versions,
                                                       "skill": SKILL_ID, "skill_version": VERSION}, indent=2, sort_keys=True), encoding="utf-8")
-            results.append(StageResult(i, el.element_id, el.type, tool, "rendered", identity, identity_input, [prev_identity], out_hash, str(target), run.seconds, run.commands))
+            results.append(StageResult(i, el.element_id, el.type, tool, "rendered", identity, identity_input, [prev_identity], out_hash, str(target),
+                                        run.seconds, run.commands, run.dropped_non_av_streams))
             stage_input, prev_identity, prev_duration = str(target), identity, artifact_meta["duration"]
+
+        warnings: List[str] = []
+        for r in results:
+            if r.dropped_non_av_streams:
+                warnings.append(f"elements[{r.element_id}] ({r.type}): ffmpeg-skill/{r.tool} could not preserve the source's subtitle/data stream(s) for this "
+                                 f"stage and fell back to a video+audio-only re-encode (dropped_non_av_streams)")
 
         final_meta = self._probe_and_check(output_path, width, height, prev_duration)
         return {
@@ -191,7 +219,7 @@ class Executor:
                 "operations": [r.to_dict() for r in results],
                 "output_hash": final_meta["sha256"],
             },
-            "warnings": [],
+            "warnings": warnings,
         }
 
     # ---- planning (no filesystem writes beyond none; probe is read-only)
@@ -211,6 +239,8 @@ class Executor:
         params = dict(el.parameters)
         if "image_path" in params and asset is not None:
             params["image_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
+        if "video_path" in params and asset is not None:
+            params["video_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
         if font is not None:
             params["font"] = font.to_provenance()
         return params
@@ -218,12 +248,14 @@ class Executor:
     # ---- argv construction: every value is a validated number, a closed-vocabulary string, or a resolved path.
     # Returns (tool, argv, cwd): cwd is None except for a custom font_file (see the comment below).
     def _argv(self, el: GraphicsElement, stage_input: str, stage_output: str, asset: Optional[Dict[str, Any]],
-              font: Optional[ResolvedFont], crf: int, preset: str) -> Tuple[str, List[str], Optional[str]]:
+              font: Optional[ResolvedFont], crf: int, preset: str, audio_stream: Optional[int] = None) -> Tuple[str, List[str], Optional[str]]:
         p = el.parameters
         spec = ELEMENT_TYPES[el.type]
         if spec["tool"] == "graphics":
             argv = [stage_input, "-o", stage_output, "--template", spec["template"],
                     "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--crf", str(crf), "--preset", preset]
+            if audio_stream is not None:
+                argv += ["--audio-stream", str(audio_stream)]
             if el.type == "title":
                 argv += ["--title", p["title"]]
                 if p.get("subtitle"):
@@ -250,6 +282,8 @@ class Executor:
         argv = [stage_input, "-o", stage_output, "--position", p["position"], "--margin", str(p["margin"]),
                 "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--opacity", fmt_number(p["opacity"]),
                 "--crf", str(crf), "--preset", preset]
+        if audio_stream is not None:
+            argv += ["--audio-stream", str(audio_stream)]
         if el.animation is not None and el.animation.kind == "fade":
             argv += ["--fade", fmt_number(el.animation.parameters["duration"])]
         cwd: Optional[str] = None
@@ -274,13 +308,23 @@ class Executor:
                     font_path = Path(font.font_file_path)
                     argv += ["--font-file", font_path.name]
                     cwd = str(font_path.parent)
-        else:  # image_overlay
+        elif el.type == "image_overlay":
             assert asset is not None
             argv += ["--image", asset["path"]]
             if p.get("scale_width"):
                 argv += ["--scale", str(p["scale_width"])]
             if p.get("scale_percent") is not None:
                 argv += ["--scale-percent", fmt_number(p["scale_percent"])]
+        else:  # video_overlay
+            assert asset is not None
+            argv += ["--video", asset["path"]]
+            if p.get("scale_width"):
+                argv += ["--scale", str(p["scale_width"])]
+            if p.get("scale_percent") is not None:
+                argv += ["--scale-percent", fmt_number(p["scale_percent"])]
+            if p.get("chromakey"):
+                argv += ["--chromakey", p["chromakey"], "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
+                         "--chromakey-blend", fmt_number(p["chromakey_blend"])]
         return "overlay", argv, cwd
 
     # ---- reuse

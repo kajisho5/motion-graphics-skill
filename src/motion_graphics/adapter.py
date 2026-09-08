@@ -14,8 +14,11 @@
 Which ffmpeg-skill tools are used, and for what (docs/ffmpeg-skill.md):
   probe     input facts (resolution, duration, streams) and output validation
   graphics  TITLE / LOWER_THIRD templates (built-in fade / slide animation, brand-free: colours passed explicitly)
-  overlay   TEXT_OVERLAY (--text) and IMAGE_OVERLAY (--image), with position, margin, static scale, opacity and a
-            configurable linear --fade in/out"""
+  overlay   TEXT_OVERLAY (--text), IMAGE_OVERLAY (--image) and VIDEO_OVERLAY (--video, with optional
+            --chromakey/--chromakey-similarity/--chromakey-blend), with position, margin, static scale, opacity
+            and (text/image only) a configurable linear --fade in/out
+Every graphics/overlay invocation may also carry --audio-stream (document.options.audio_stream, ffmpeg-skill
+0.12.0) to select which audio track of the source survives."""
 from __future__ import annotations
 
 import json
@@ -32,17 +35,23 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from .errors import MotionGraphicsError
 
 SUPPORTED_CONTRACT_VERSION = "1.0"
-SUPPORTED_MIN = (0, 9, 1)
+# 0.12.1 is the oldest ffmpeg-skill release carrying every flag/field this adapter now relies on: --video /
+# --chromakey* on overlay (0.11.0), --audio-stream on graphics/overlay (0.12.0), and dropped_non_av_streams in
+# both tools' --json response (0.12.1). An older checkout would silently lack fields this adapter reads (
+# dropped_non_av_streams isn't itself a CLI flag, so FLAGS_USED's contract check alone would not catch a stale
+# 0.11.x here) -- raising the floor is how info() actually refuses it instead.
+SUPPORTED_MIN = (0, 12, 1)
 SUPPORTED_MAX_EXCLUSIVE = (1, 0, 0)
 ENV_DIR_KEYS = ("MOTION_GRAPHICS_FFMPEG_SKILL_DIR", "VIDEO_AGENT_FFMPEG_SKILL_DIR")
 TOOLS_USED = ("probe", "graphics", "overlay")
 # flags of the ffmpeg-skill input_schema this adapter emits; checked against the live contract in doctor
 FLAGS_USED: Dict[str, Tuple[str, ...]] = {
     "probe": ("inputs",),
-    "graphics": ("input", "output", "template", "name", "title", "subtitle", "start", "end", "primary", "text_color", "font", "font_file", "json"),
-    "overlay": ("input", "output", "image", "text", "position", "margin", "start", "end", "fade", "opacity",
+    "graphics": ("input", "output", "template", "name", "title", "subtitle", "start", "end", "primary", "text_color",
+                 "font", "font_file", "audio_stream", "json"),
+    "overlay": ("input", "output", "image", "text", "video", "position", "margin", "start", "end", "fade", "opacity",
                 "scale", "scale_percent", "font", "font_file", "font_size", "font_color", "border", "border_color",
-                "box", "box_color", "json"),
+                "box", "box_color", "chromakey", "chromakey_similarity", "chromakey_blend", "audio_stream", "json"),
 }
 _ENV_KEEP = ("PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TERM",
              "SYSTEMROOT", "SYSTEMDRIVE", "PATHEXT", "COMSPEC", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA")
@@ -99,6 +108,10 @@ class ToolRun:
     stderr_tail: str
     seconds: float
     commands: List[str] = field(default_factory=list)
+    # ffmpeg-skill 0.12.1: true only when graphics/overlay's own subtitle/data-stream preservation attempt failed
+    # and it fell back to a video+audio-only re-encode, silently dropping the source's subtitle/data stream(s).
+    # None when the tool's response never carries the field at all (e.g. probe, or an older ffmpeg-skill).
+    dropped_non_av_streams: Optional[bool] = None
 
 
 @dataclass
@@ -222,7 +235,9 @@ class FfmpegSkill:
         code, out, err, seconds = self._popen(argv, timeout or self.timeout, cwd)
         data = _parse_json(out)
         tail = "\n".join(err.strip().splitlines()[-12:])
-        run = ToolRun(tool, argv, code, data, tail, seconds, list(data.get("commands", [])) if isinstance(data.get("commands"), list) else [])
+        dropped = data.get("dropped_non_av_streams") if isinstance(data, dict) else None
+        run = ToolRun(tool, argv, code, data, tail, seconds, list(data.get("commands", [])) if isinstance(data.get("commands"), list) else [],
+                      dropped if isinstance(dropped, bool) else None)
         self.runs.append(run)
         if code != 0 or (isinstance(data, dict) and data.get("status") == "failed"):
             msg = (data.get("error") or {}).get("message") if isinstance(data.get("error"), dict) else None

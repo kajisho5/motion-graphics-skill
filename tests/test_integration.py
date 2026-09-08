@@ -17,7 +17,8 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import Executor
 from motion_graphics.security import PathPolicy
 
-from conftest import bug_element, chapter_element, countdown_element, image_overlay_element, progress_element, request_doc, text_overlay_element, title_element, run_cli, one_json
+from conftest import (bug_element, chapter_element, countdown_element, image_overlay_element, progress_element, request_doc,
+                      text_overlay_element, title_element, video_overlay_element, run_cli, one_json)
 
 
 def _executor(skill_dir, workspace) -> Executor:
@@ -39,6 +40,17 @@ def _luma(path: str, t: float, crop: str) -> float:
 def _probe(skill_dir, path: str) -> dict:
     r = subprocess.run(["python3", str(Path(skill_dir) / "scripts" / "probe.py"), str(path)], capture_output=True, text=True, check=True)
     return json.loads(r.stdout)
+
+
+def _mean_volume(path: str) -> float:
+    """Mean loudness (dB) of the whole file's audio track, via ffmpeg's own volumedetect filter -- an objective
+    way to tell which *source* audio track survived --audio-stream (ffprobe on the output alone cannot: it only
+    ever shows the one audio stream the tool actually mapped, never which source index it came from)."""
+    cmd = ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    m = re.search(r"mean_volume:\s*(-?[\d.]+)\s*dB", r.stdout + r.stderr)
+    assert m, f"no mean_volume found for {path}: stderr={r.stderr[-2000:]!r}"
+    return float(m.group(1))
 
 
 # ---- title
@@ -116,6 +128,117 @@ def test_image_overlay_bad_extension_rejected(skill_dir, workspace):
     with pytest.raises(MotionGraphicsError) as e:
         ex.response(request_doc([image_overlay_element(image_path="logo.svg")], output="out/x.mp4"))
     assert e.value.code == "UNSUPPORTED_FORMAT"
+
+
+# ---- video_overlay: video-on-video picture-in-picture / chroma-key (ffmpeg-skill/overlay --video, --chromakey*,
+# ffmpeg-skill 0.11.0; issue #10 item 2)
+def test_video_overlay_changes_pixels_at_its_position(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([video_overlay_element(video_path="video_short.mp4", position="top-left", margin=0, scale_width=100, start=0, end=2)],
+                                    output="out/pip.mp4"))
+    assert resp["ok"] is True
+    out = resp["output"]["path"]
+    crop = "50:40:0:0"  # safely inside the scaled-to-100px-wide PiP layer placed flush at the top-left corner
+    luma_with_pip = _luma(out, 0.5, crop)
+    luma_source = _luma(str(workspace / "video.mp4"), 0.5, crop)
+    assert abs(luma_with_pip - luma_source) > 2.0, "video_overlay did not measurably change the pixels at its declared position"
+
+
+def test_video_overlay_scale_and_opacity_are_applied(skill_dir, workspace):
+    # Regression for the argv construction itself: a video_overlay element wires --scale/--opacity through, same
+    # as image_overlay -- rendering must not error out and must still produce a valid, correctly-sized artifact.
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([video_overlay_element(video_path="video_short.mp4", position="bottom-right", scale_width=80, opacity=0.6, start=0, end=2)],
+                                    output="out/pip_opacity.mp4"))
+    assert resp["ok"] is True
+    meta = _probe(skill_dir, resp["output"]["path"])
+    assert meta["video"]["width"] == 320 and meta["video"]["height"] == 180
+
+
+def test_video_overlay_chromakey_reveals_the_base_video_underneath(skill_dir, workspace):
+    # An opaque full-frame PiP layer hides the base video entirely (its luma stays close to solid green's luma
+    # regardless of time); keying that exact colour out with --chromakey should instead reveal the base video's
+    # own, time-varying content underneath -- an objective, measurable difference, not a "looks right" judgement.
+    green = workspace / "green.mp4"
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x00ff00:s=320x180:r=25", "-t", "2",
+                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(green)], check=True)
+    crop = "64:64:128:58"  # a fixed, fully-covered region near the centre of the full-frame PiP layer
+
+    ex = _executor(skill_dir, workspace)
+    opaque = ex.response(request_doc([video_overlay_element(video_path="green.mp4", position="top-left", margin=0, start=0, end=2)], output="out/opaque.mp4"))
+    assert opaque["ok"] is True
+    keyed = ex.response(request_doc([video_overlay_element(video_path="green.mp4", position="top-left", margin=0, chromakey="00ff00", start=0, end=2)],
+                                     output="out/keyed.mp4"))
+    assert keyed["ok"] is True
+
+    luma_source = _luma(str(workspace / "video.mp4"), 1.0, crop)
+    luma_opaque = _luma(opaque["output"]["path"], 1.0, crop)
+    luma_keyed = _luma(keyed["output"]["path"], 1.0, crop)
+    assert abs(luma_opaque - luma_source) > 10.0, "an opaque full-frame PiP layer should hide the base video, not match its luma"
+    assert abs(luma_keyed - luma_source) < abs(luma_opaque - luma_source), "chroma-keying the PiP layer's own colour should reveal the base video, not hide it like the opaque case"
+
+
+def test_missing_video_overlay_asset_fails(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    with pytest.raises(MotionGraphicsError) as e:
+        ex.response(request_doc([video_overlay_element(video_path="does-not-exist.mp4")], output="out/x.mp4"))
+    assert e.value.code == "INVALID_INPUT"
+
+
+def test_video_overlay_source_without_video_stream_rejected(skill_dir, workspace):
+    audio_only = workspace / "audio_only.mp4"
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "1", str(audio_only)], check=True)
+    ex = _executor(skill_dir, workspace)
+    with pytest.raises(MotionGraphicsError) as e:
+        ex.response(request_doc([video_overlay_element(video_path="audio_only.mp4")], output="out/x.mp4"))
+    assert e.value.code == "INVALID_INPUT"
+
+
+# ---- document.options.audio_stream (ffmpeg-skill/{graphics,overlay} --audio-stream, ffmpeg-skill 0.12.0;
+# issue #10 item 3)
+def test_audio_stream_option_selects_the_requested_source_track(skill_dir, workspace):
+    # video_dual_audio.mp4's stream 0 is silent, stream 1 an audible 440Hz tone -- selecting each and measuring
+    # the *rendered output's* mean_volume proves the flag actually reached ffmpeg-skill/graphics, not merely that
+    # the request was accepted.
+    ex = _executor(skill_dir, workspace)
+    silent = ex.response(request_doc([title_element(start=0, end=2)], video="video_dual_audio.mp4", output="out/audio0.mp4", options={"audio_stream": 0}))
+    tone = ex.response(request_doc([title_element(start=0, end=2)], video="video_dual_audio.mp4", output="out/audio1.mp4", options={"audio_stream": 1}))
+    assert silent["ok"] is True and tone["ok"] is True
+    vol_silent = _mean_volume(silent["output"]["path"])
+    vol_tone = _mean_volume(tone["output"]["path"])
+    assert vol_tone - vol_silent > 20.0, f"selecting the tone track should measurably increase mean_volume (silent={vol_silent}dB, tone={vol_tone}dB)"
+
+
+def test_audio_stream_option_threaded_through_overlay_tool_too(skill_dir, workspace):
+    # Same guarantee, but through ffmpeg-skill/overlay (a text_overlay element) rather than graphics -- the issue
+    # specifically calls out that --audio-stream was added to *both* tools.
+    ex = _executor(skill_dir, workspace)
+    silent = ex.response(request_doc([text_overlay_element(text="x", start=0, end=2)], video="video_dual_audio.mp4", output="out/ov_audio0.mp4", options={"audio_stream": 0}))
+    tone = ex.response(request_doc([text_overlay_element(text="x", start=0, end=2)], video="video_dual_audio.mp4", output="out/ov_audio1.mp4", options={"audio_stream": 1}))
+    assert silent["ok"] is True and tone["ok"] is True
+    assert _mean_volume(tone["output"]["path"]) - _mean_volume(silent["output"]["path"]) > 20.0
+
+
+def test_audio_stream_out_of_range_for_real_input_is_a_tool_error(skill_dir, workspace):
+    # document.options.audio_stream is only bounded structurally at [0, 63] (model.py) -- ffmpeg-skill/graphics
+    # itself is what actually knows how many audio streams a given input has, and `die`s on an out-of-range value;
+    # this Skill never guesses whether a real input has that many tracks (ADR-16).
+    ex = _executor(skill_dir, workspace)
+    with pytest.raises(MotionGraphicsError) as e:
+        ex.response(request_doc([title_element(start=0, end=2)], video="video_dual_audio.mp4", output="out/x.mp4", options={"audio_stream": 5}))
+    assert e.value.code == "TOOL_ERROR"
+
+
+# ---- dropped_non_av_streams surfaced (ffmpeg-skill 0.12.1; issue #10 item 4)
+def test_dropped_non_av_streams_is_false_and_no_warning_on_a_normal_render(skill_dir, workspace):
+    # None of this Skill's fixtures carry a subtitle/data stream, so ffmpeg-skill's own preservation attempt has
+    # nothing to fall back from -- pinning down the ordinary, unsurprising case explicitly (a stray True or a
+    # warning here would itself be the bug).
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([title_element(start=0, end=2)], output="out/normal.mp4"))
+    assert resp["ok"] is True
+    assert resp["operations"][0]["dropped_non_av_streams"] is False
+    assert resp["warnings"] == []
 
 
 # ---- bug

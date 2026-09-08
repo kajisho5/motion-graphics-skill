@@ -2,7 +2,12 @@
 ffmpeg directly; the skill under test never does.
 
   video.mp4       6 s 320x180 H.264 + mono AAC tone
-  video_short.mp4 2 s 320x180 H.264, no audio (used for time-range negative tests)
+  video_short.mp4 2 s 320x180 H.264, no audio (used for time-range negative tests; also composited as a
+                  picture-in-picture layer by video_overlay tests)
+  video_dual_audio.mp4  3 s 320x180 H.264 + two distinguishable AAC audio streams (stream 0 silent, stream 1 an
+                  audible tone) -- lets a test prove --audio-stream actually selects the requested source track by
+                  measuring loudness on the rendered output, since ffprobe on the *output* only ever shows the one
+                  audio stream the tool mapped, never which source index it came from
   logo.png        64x64 PNG with alpha (a translucent red square) for image_overlay tests
   font.ttf        a copy of a real font already on this machine (DejaVu preferred; any .ttf/.ttc otherwise),
                   for the font_file path -- the test only needs valid font bytes, not a specific family
@@ -39,10 +44,15 @@ def _run(args):
 def build_all(directory: Path) -> Dict[str, Path]:
     d = Path(directory)
     d.mkdir(parents=True, exist_ok=True)
-    f = {k: d / v for k, v in {"video": "video.mp4", "video_short": "video_short.mp4", "logo": "logo.png", "font": "font.ttf", "text": "text.txt"}.items()}
+    f = {k: d / v for k, v in {"video": "video.mp4", "video_short": "video_short.mp4", "video_dual_audio": "video_dual_audio.mp4",
+                               "logo": "logo.png", "font": "font.ttf", "text": "text.txt"}.items()}
     _run(["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-f", "lavfi", "-i", "aevalsrc='0.1*sin(2*PI*440*t)':s=48000",
           "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(f["video"])])
     _run(["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-t", "2", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(f["video_short"])])
+    _run(["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+          "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)':s=48000",
+          "-map", "0:v", "-map", "1:a", "-map", "2:a", "-t", "3",
+          "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(f["video_dual_audio"])])
     _run(["-f", "lavfi", "-i", "color=c=red@0.6:s=64x64", "-frames:v", "1", str(f["logo"])])
     for cand in SYSTEM_FONT_CANDIDATES:
         if Path(cand).is_file():

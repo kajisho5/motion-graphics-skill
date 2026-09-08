@@ -106,6 +106,33 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:overlay", "filter:scale", "filter:colorchannelmixer", "encoder:libx264"],
     },
+    "video_overlay": {
+        "tool": "overlay", "mode": "video",
+        "description": "Composite a second video as a picture-in-picture layer at a position, with optional static scale, opacity, and chroma-key (green-screen) removal (ffmpeg-skill/overlay --video, --chromakey). Only this element's own audio track, if any, is dropped -- the base video's audio is unaffected, same as image_overlay/text_overlay.",
+        # ffmpeg-skill/overlay's --fade is never applied to the --video branch (only --image/--text read
+        # args.fade at all; the --video branch's filter chain has no fade term) -- exposing a configurable fade
+        # here would be a parameter that silently does nothing, the same reasoning ADR-12 gives for chapter's
+        # missing text_color. See docs/decisions.md ADR-15.
+        "animation": "none",
+        "parameters": {
+            "video_path": {"type": _PATH, "required": True},
+            "position": {"type": _POS, "required": False, "default": "bottom-right"},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24},
+            "scale_width": {"type": _INT, "required": False, "min": 1, "max": 8192},
+            "scale_percent": {"type": _NUM, "required": False, "min": 0.1, "max": 100.0},
+            "opacity": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 1.0},
+            # ffmpeg-skill/overlay validates 0 < chromakey_similarity <= 1 (strictly positive) and
+            # 0 <= chromakey_blend <= 1; 0.01 stands in for "greater than zero" the same way the `fade` animation's
+            # `duration` minimum does (both are decimal, not integer, bounds).
+            "chromakey": {"type": _COLOR, "required": False},
+            "chromakey_similarity": {"type": _NUM, "required": False, "min": 0.01, "max": 1.0, "default": 0.15},
+            "chromakey_blend": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 0.05},
+        },
+        # filter:chromakey is only exercised when `chromakey` is set, but this list is the union of capabilities
+        # any parameter combination of this type could need (the same convention image_overlay's
+        # filter:colorchannelmixer -- only used when opacity < 1 -- already follows), not "always needed".
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:overlay", "filter:scale", "filter:colorchannelmixer", "filter:chromakey", "encoder:libx264"],
+    },
     "bug": {
         "tool": "graphics", "template": "bug",
         "description": "Persistent text bug in a corner (e.g. \"@handle\" or \"LIVE\"). Built-in 0.3s alpha fade in/out "
@@ -479,7 +506,7 @@ def parse_request(document: Any) -> GraphicsDocument:
         seen[el.element_id] = i
 
     options_raw = top.get("options", {})
-    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset"), ())
+    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -490,5 +517,16 @@ def parse_request(document: Any) -> GraphicsDocument:
     presets = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
     if preset not in presets:
         raise MotionGraphicsError("INVALID_REQUEST", f"document.options.preset must be one of {presets}: {preset!r}", {"field": "document.options.preset"})
+    # Which audio stream of document.video.path to keep, 0-based (ffmpeg-skill/graphics and ffmpeg-skill/overlay
+    # --audio-stream, added in ffmpeg-skill 0.12.0). Applies to every graphics/overlay stage of the pipeline, not
+    # per-element -- there is only ever one source video, so there is only one meaningful choice of audio track for
+    # the whole document. Bounded generously (no real container carries anywhere near this many audio tracks) to
+    # catch an integer typo structurally; whether the *actual* input has that many tracks is not knowable here
+    # without probing it, so an out-of-range value for the real input surfaces as a real TOOL_ERROR from the
+    # delegate tool itself (ffmpeg-skill/{graphics,overlay} both `die` on it) rather than this Skill guessing.
+    audio_stream = options.get("audio_stream")
+    if audio_stream is not None and (isinstance(audio_stream, bool) or not isinstance(audio_stream, int) or not (0 <= audio_stream <= 63)):
+        raise MotionGraphicsError("INVALID_REQUEST", "document.options.audio_stream must be an integer within [0, 63]", {"field": "document.options.audio_stream"})
 
-    return GraphicsDocument(video_path, output_path, overwrite, tuple(elements), {"reuse_intermediates": reuse, "crf": crf, "preset": preset})
+    return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
+                             {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream})

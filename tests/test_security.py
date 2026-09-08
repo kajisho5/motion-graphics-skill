@@ -11,7 +11,7 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.model import FORBIDDEN_KEYS, parse_request
 from motion_graphics.security import PathPolicy
 
-from conftest import bug_element, chapter_element, countdown_element, progress_element, request_doc, run_cli, text_overlay_element, title_element, one_json
+from conftest import bug_element, chapter_element, countdown_element, progress_element, request_doc, run_cli, text_overlay_element, title_element, video_overlay_element, one_json
 
 
 # ---- no shell, ever
@@ -57,7 +57,7 @@ def test_forbidden_keys_rejected_nested_in_element_parameters(key):
     assert e.value.code in ("INVALID_REQUEST",)
 
 
-@pytest.mark.parametrize("make_element", [title_element, bug_element, chapter_element, progress_element, countdown_element])
+@pytest.mark.parametrize("make_element", [title_element, bug_element, chapter_element, progress_element, countdown_element, video_overlay_element])
 def test_forbidden_field_rejected_for_every_element_type(make_element):
     # _reject_forbidden() runs on the raw document before any type-specific parameter parsing, so it should catch
     # a forbidden field identically regardless of which element type carries it -- this pins that generality down
