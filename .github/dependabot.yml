@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # This project's own `dependencies` list (pyproject.toml) is empty today, but the ecosystem is still worth
+  # watching: it covers pyproject.toml itself, so it starts working the moment any runtime or optional
+  # dependency is actually added, with nothing further to configure here.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
