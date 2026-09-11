@@ -755,9 +755,20 @@ def test_argv_for_video_overlay_with_chromakey_includes_chromakey_flags():
     el = _video_overlay_element_obj(chromakey="00ff00", chromakey_similarity=0.3, chromakey_blend=0.2)
     asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
     _, argv, _ = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
-    assert argv[argv.index("--chromakey") + 1] == "00ff00"
+    # A bare 6-hex-digit value picks up a `0x` prefix before it reaches ffmpeg-skill/overlay's --chromakey:
+    # that tool's validate_color() rejects unprefixed hex outright (see executor._color_arg()).
+    assert argv[argv.index("--chromakey") + 1] == "0x00ff00"
     assert argv[argv.index("--chromakey-similarity") + 1] == "0.3"
     assert argv[argv.index("--chromakey-blend") + 1] == "0.2"
+
+
+def test_color_arg_prefixes_bare_hex_but_passes_named_colors_and_prefixed_hex_through():
+    from motion_graphics.executor import _color_arg
+    assert _color_arg("00ff00") == "0x00ff00"
+    assert _color_arg("00FF00@0.5") == "0x00FF00@0.5"
+    assert _color_arg("white") == "white"
+    assert _color_arg("0x00ff00") == "0x00ff00"
+    assert _color_arg("#00ff00") == "#00ff00"
 
 
 def test_argv_for_video_overlay_without_chromakey_omits_chromakey_flags():

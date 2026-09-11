@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -28,6 +29,23 @@ MANIFEST_SCHEMA = f"{SKILL_ID}/manifest@1"
 WORK_DIR_NAME = ".motion-graphics"
 DURATION_TOLERANCE = 0.25  # seconds; each stage re-encodes with a forced constant frame rate (ffmpeg-skill cfr_args)
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
+_HEX6_RE = re.compile(r"^[0-9A-Fa-f]{6}(@(0(\.[0-9]+)?|1(\.0+)?))?$")
+
+
+def _color_arg(value: str) -> str:
+    """Prefix a bare RRGGBB[@alpha] value with `0x` before it reaches ffmpeg-skill; pass a named colour or an
+    already-prefixed value through unchanged. model._color() only checks a value *looks like* a colour (bare hex
+    included, matching how this Skill's contract has always described the `color` type) -- this is the one place
+    it becomes the literal token the engine expects.
+
+    Needed for every `overlay.py` colour flag (`--font-color`/`--border-color`/`--box-color`/`--chromakey`):
+    that script's `validate_color()` (a filter-graph-injection guard added upstream) requires an explicit `0x`/`#`
+    prefix or a named colour and rejects bare hex outright. `graphics.py`'s `--text-color`/`--primary` already
+    strip and re-add `0x` themselves internally (`color_hex()`/`ff_color()`), so prefixing here is a no-op for
+    them, not a behaviour change -- applying it uniformly to every colour flag, not just overlay's, keeps this
+    one rule instead of two."""
+    return f"0x{value}" if _HEX6_RE.match(value) else value
 
 
 @dataclass
@@ -274,9 +292,9 @@ class Executor:
             # else: progress -- no --title/--position/--from at all (see model.ELEMENT_TYPES); only the trailing
             # primary_color passthrough below applies to it
             if p.get("text_color"):
-                argv += ["--text-color", p["text_color"]]
+                argv += ["--text-color", _color_arg(p["text_color"])]
             if p.get("primary_color"):
-                argv += ["--primary", p["primary_color"]]
+                argv += ["--primary", _color_arg(p["primary_color"])]
             return "graphics", argv, None
 
         argv = [stage_input, "-o", stage_output, "--position", p["position"], "--margin", str(p["margin"]),
@@ -288,10 +306,10 @@ class Executor:
             argv += ["--fade", fmt_number(el.animation.parameters["duration"])]
         cwd: Optional[str] = None
         if el.type == "text_overlay":
-            argv += ["--text", p["text"], "--font-size", str(p["font_size"]), "--font-color", p["font_color"],
-                     "--border", str(p["border_width"]), "--border-color", p["border_color"]]
+            argv += ["--text", p["text"], "--font-size", str(p["font_size"]), "--font-color", _color_arg(p["font_color"]),
+                     "--border", str(p["border_width"]), "--border-color", _color_arg(p["border_color"])]
             if p.get("box"):
-                argv += ["--box", "--box-color", p["box_color"]]
+                argv += ["--box", "--box-color", _color_arg(p["box_color"])]
             if font is not None:
                 if font.kind == "system":
                     argv += ["--font", font.engine_arg["font"]]
@@ -323,7 +341,7 @@ class Executor:
             if p.get("scale_percent") is not None:
                 argv += ["--scale-percent", fmt_number(p["scale_percent"])]
             if p.get("chromakey"):
-                argv += ["--chromakey", p["chromakey"], "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
+                argv += ["--chromakey", _color_arg(p["chromakey"]), "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
                          "--chromakey-blend", fmt_number(p["chromakey_blend"])]
         return "overlay", argv, cwd
 
