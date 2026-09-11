@@ -155,6 +155,18 @@ type, a new top-level key), before merging.
   bounded even where the underlying `ffmpeg-skill` tool itself places no limit (`[1, 60]`, ADR-14) — the same
   class of concern `MAX_ELEMENTS` bounds for the request as a whole, applied at the single-element level. Apply
   the same reasoning to any future element type with a similar "repeat N times" parameter.
+- **Newly found, not yet fixed (2026-09-11)**: `tests/test_integration.py::test_video_overlay_chromakey_reveals_the_base_video_underneath`
+  fails against the current `vendor/ffmpeg-skill` checkout (`v0.16.14`) — `ffmpeg-skill/overlay` now rejects a
+  bare hex `--chromakey` value like `00ff00` ("must be a plain colour... a name, 0xRRGGBB[AA], or #RRGGBB[AA]"),
+  where it previously accepted it. Confirmed by bisecting: the same test passes cleanly against `ffmpeg-skill`
+  `v0.12.5` (the range `video_overlay` was implemented and tested against) and fails against `v0.16.14`, and the
+  rest of the suite is unaffected (312 passed / 1 failed either way) — this is `ffmpeg-skill`'s `--chromakey`
+  validation having tightened sometime between those two versions, not a regression in this repository's own
+  code, and not something this GitHub-automation PR touches or introduced. Whoever picks this up next: either
+  this Skill needs to start emitting a `0x`-prefixed/`#`-prefixed color for `chromakey_color` (check what format
+  `ffmpeg-skill/overlay --help`/its current source actually requires first, don't guess), or `SUPPORTED_MIN`
+  needs to move forward with a coordinated fix — don't just re-widen the test's expected color string without
+  understanding which format is now actually correct.
 
 ## Next highest-value task (as of last check)
 
