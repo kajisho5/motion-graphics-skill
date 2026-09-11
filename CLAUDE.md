@@ -4,9 +4,10 @@ Durable, repository-local notes for whichever Claude Code session picks this rep
 conversation history; trust this file, the code, the tests, and live CI/PR state — in that order. Re-verify
 anything here that looks stale before acting on it (dates are given so staleness is checkable).
 
-Last verified: 2026-09-11, against `main` @ `94ba430` (PRs #1-#13 merged) + an open branch
-`fix/ffmpeg-skill-1x-compat` (not yet a PR at last edit) fixing a real, currently-broken CI issue described below.
-PR #14 (GitHub automation) is open, draft, unrelated to the fix below.
+Last verified: 2026-09-11, against `main` @ `94ba430` (PRs #1-#13 merged) + open PR #15
+(`fix/ffmpeg-skill-1x-compat`, draft) fixing a real, currently-broken CI issue described below. PR #14 (GitHub
+automation) is open, draft, unrelated. Issue #16 (opened while getting #15's own CI green) tracks a newly-found,
+deterministic macOS-only pixel-threshold failure in an unrelated pre-existing test — see "Known limitations".
 
 ## What this repo is
 
@@ -176,19 +177,31 @@ type, a new top-level key), before merging.
   bounded even where the underlying `ffmpeg-skill` tool itself places no limit (`[1, 60]`, ADR-14) — the same
   class of concern `MAX_ELEMENTS` bounds for the request as a whole, applied at the single-element level. Apply
   the same reasoning to any future element type with a similar "repeat N times" parameter.
+- **`test_countdown_draws_a_digit_throughout_its_window[0.5]` fails deterministically on `macos-latest` CI**
+  (issue #16, found while getting PR #15 green) — identical luma values across two independent parallel runs on
+  the same commit (`2.298` vs. a `> 3.0` threshold), while Ubuntu/Windows pass cleanly on the same commit. Not a
+  flake (a real flake disagrees between runs; this doesn't); not caused by PR #15's actual diff (colour-flag
+  formatting, version window — nothing to do with `countdown`). Most likely cause, not confirmed: macOS CI
+  installs whatever `evermeet.cx` currently serves as latest `ffmpeg`, independent of `ffmpeg-skill`'s version,
+  and that build may have drifted since this test's threshold was calibrated (PR #8) — but this is plausibly also
+  the *first* time this test has ever run against current reality on macOS, since the version-gate PR #15 fixed
+  rejected `ffmpeg-skill 1.1.0` outright before any test body ran there. Needs someone with real macOS access to
+  root-cause properly (render directly, measure, don't just widen the threshold as a guess — the same standard
+  ADR-11/ADR-12's original pixel checks were held to).
 
 ## Next highest-value task (as of last check)
 
-1. **Check whether `fix/ffmpeg-skill-1x-compat` has been turned into a PR and merged yet.** If not, that's the
-   most urgent thing: CI is currently broken against `ffmpeg-skill`'s real `main` (the version-gate rejection
-   affects ~40 tests, not just the one `chromakey` failure PR #14's history documents). Verify the fix still
-   applies cleanly and the evidence in ADR-18 still holds (re-diff `ffmpeg-skill`'s current `scripts/` against
-   `0.16.14` — if it's no longer zero differences, the "safe to trust the 1.x line" reasoning needs re-checking,
-   not just re-asserting).
-2. **`shape` (issue #10 item 1)** is the real remaining feature gap — scope the two-tool-pipeline design question
+1. **Check whether PR #15 (`fix/ffmpeg-skill-1x-compat`) has merged yet.** If not, that's the most urgent thing:
+   CI is currently broken against `ffmpeg-skill`'s real `main` (the version-gate rejection affects ~40 tests, not
+   just the one `chromakey` failure PR #14's history documents). Verify the fix still applies cleanly and the
+   evidence in ADR-18 still holds (re-diff `ffmpeg-skill`'s current `scripts/` against `0.16.14` — if it's no
+   longer zero differences, the "safe to trust the 1.x line" reasoning needs re-checking, not just re-asserting).
+2. **Issue #16** (macOS-only `countdown` pixel-threshold failure, above) needs a real macOS environment to
+   root-cause properly — pick it up if one is available.
+3. **`shape` (issue #10 item 1)** is the real remaining feature gap — scope the two-tool-pipeline design question
    (per-element identity/caching for a `background`+`overlay --video` composite) before implementing anything.
-3. **Watch `kajisho5/AI-video-production-OS`'s architecture branch for a merge to `main`.** When it lands, diff
+4. **Watch `kajisho5/AI-video-production-OS`'s architecture branch for a merge to `main`.** When it lands, diff
    this repo's `provides`/`CAPABILITY_IDS` choices against whatever actually merged and reconcile if it differs.
-4. Do not invent OS integration machinery beyond what a *verified* sibling contract/registry actually reads (see
+5. Do not invent OS integration machinery beyond what a *verified* sibling contract/registry actually reads (see
    the compatibility recipe above) — the OS layer is still mostly unbuilt; keep this Skill's standalone
    contract/doctor/CLI as the source of truth for its own behavior.
