@@ -40,12 +40,16 @@ version-resolver:
 # is best-effort, not exact for every historical PR (a couple of past branches used "fix/" for what was
 # substantively a feature) -- a maintainer can always add/correct a label by hand before merge; the
 # `default: patch` above is the safety net when a rule under- or over-matches.
+#
+# Deliberately no `major`/`breaking` autolabeler rule: a text-pattern rule here (e.g. title starting with
+# "major:"/"breaking:", or "BREAKING CHANGE" anywhere in the body) would let a PR describing a bug -- not
+# introducing one -- get auto-labelled `major` just for using that phrase in its own explanation, and this
+# release pipeline turns a `major` label directly into a real major version bump on merge. That is a real
+# incident that happened in a sibling repo (a PR whose body used "BREAKING CHANGE" only to describe a bug got
+# auto-labelled `major`; caught before a release actually went out). `major`/`breaking` stay in `categories`/
+# `version-resolver` above so a maintainer can still apply either by hand -- they are just never assigned
+# automatically from PR text.
 autolabeler:
-  - label: 'major'
-    title:
-      - '/^(major|breaking)[:!( ]/i'
-    body:
-      - '/BREAKING CHANGE/'
   - label: 'feature'
     branch:
       - '/^feature\//i'
