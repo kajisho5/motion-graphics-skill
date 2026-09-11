@@ -16,14 +16,26 @@ which audio track of the source survives.
 
 ## Version window
 
-`adapter.SUPPORTED_MIN = 0.12.1`, `adapter.SUPPORTED_MAX_EXCLUSIVE = 1.0.0`, `adapter.SUPPORTED_CONTRACT_VERSION =
+`adapter.SUPPORTED_MIN = 0.12.1`, `adapter.SUPPORTED_MAX_EXCLUSIVE = 2.0.0`, `adapter.SUPPORTED_CONTRACT_VERSION =
 "1.0"`. `FfmpegSkill.info()` reads `scripts/_contract.py --json --static`, checks the version window and contract
 version, and that `graphics`/`overlay`/`probe` still declare the flags in `adapter.FLAGS_USED`. Any mismatch is a
 `TOOL_ERROR` (retryable) surfaced by `doctor` and refused by `run`/`plan` before anything renders. `0.12.1` is the
 floor (raised from `0.9.1`) because it is the oldest release carrying every flag/field this adapter now relies on:
 `--video`/`--chromakey*` on `overlay` (0.11.0), `--audio-stream` on `graphics`/`overlay` (0.12.0), and
 `dropped_non_av_streams` in both tools' `--json` response (0.12.1) — the last of which is not itself a CLI flag,
-so `FLAGS_USED`'s contract check alone would not have caught a stale checkout missing it.
+so `FLAGS_USED`'s contract check alone would not have caught a stale checkout missing it. The ceiling is `2.0.0`,
+not `1.0.0`, because `ffmpeg-skill`'s own `docs/contract.md` now states and pins (a snapshot test) a formal 1.x
+stability guarantee — see ADR-18.
+
+## Colour flags must be `0x`/`#`-prefixed or a named colour (`ffmpeg-skill/overlay`'s `validate_color()`)
+
+`overlay.py`'s `--font-color`/`--border-color`/`--box-color`/`--chromakey` all reject a bare `RRGGBB` value with no
+`0x`/`#` prefix — a filter-graph-injection guard added upstream, not a formatting whim. `model._color()` only
+checks a value *looks like* a colour (bare hex included, matching this Skill's own `color` type); `executor.
+_color_arg()` is the one place a bare hex value actually gets its `0x` prefix before reaching `overlay.py`. It is
+applied to every colour flag on both tools (also `graphics.py`'s `--text-color`/`--primary`, even though that
+script's own `color_hex()`/`ff_color()` already strip and re-add `0x` internally — a no-op there, not a behaviour
+change, so the one rule covers both tools instead of two). ADR-18.
 
 ## Discovery order (`FfmpegSkill.candidates`)
 

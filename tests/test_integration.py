@@ -86,6 +86,17 @@ def test_text_overlay_renders_with_various_text(skill_dir, workspace, text):
     assert Path(resp["output"]["path"]).stat().st_size > 0
 
 
+def test_text_overlay_renders_with_bare_hex_colors(skill_dir, workspace):
+    # font_color/border_color/box_color all go through ffmpeg-skill/overlay's own validate_color(), same as
+    # video_overlay's chromakey -- a bare 6-hex-digit value (no `0x`/`#` prefix) must actually render, not just
+    # pass this Skill's own structural validation (executor._color_arg() is what makes that true).
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([text_overlay_element(text="Hex Colors", font_color="00FF00", border_color="112233",
+                                                           box=True, box_color="445566", start=0, end=2)], output="out/hexcolor.mp4"))
+    assert resp["ok"] is True
+    assert Path(resp["output"]["path"]).stat().st_size > 0
+
+
 def test_text_overlay_with_custom_font_file(skill_dir, workspace):
     font_path = workspace / "font.ttf"
     if not font_path.is_file():

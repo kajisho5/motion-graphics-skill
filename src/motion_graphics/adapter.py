@@ -40,8 +40,16 @@ SUPPORTED_CONTRACT_VERSION = "1.0"
 # both tools' --json response (0.12.1). An older checkout would silently lack fields this adapter reads (
 # dropped_non_av_streams isn't itself a CLI flag, so FLAGS_USED's contract check alone would not catch a stale
 # 0.11.x here) -- raising the floor is how info() actually refuses it instead.
+#
+# The ceiling is (2, 0, 0), not (1, 0, 0): ffmpeg-skill's own docs/contract.md now states and *tests* (a pinned
+# tools/list snapshot) a formal 1.x stability guarantee -- tool ids, CLI arguments, --json/contract/doctor output
+# keys and exit codes are never removed/renamed/retyped for the whole 1.x line, only added to; a breaking change
+# is a 2.0.0. (1.0.0 itself was published by an unrelated release-automation bug in that repo on 2026-09-11 --
+# ffmpeg-skill's own CHANGELOG documents it as "no user-facing or compatibility change over 0.16.15" -- and its
+# own README says to "treat 1.0.x as 0.16.x under a different name"; verified directly, not assumed, by diffing
+# `scripts/` between the last-verified 0.16.14 and 1.1.0: zero differences.) docs/ffmpeg-skill.md, ADR-18.
 SUPPORTED_MIN = (0, 12, 1)
-SUPPORTED_MAX_EXCLUSIVE = (1, 0, 0)
+SUPPORTED_MAX_EXCLUSIVE = (2, 0, 0)
 ENV_DIR_KEYS = ("MOTION_GRAPHICS_FFMPEG_SKILL_DIR", "VIDEO_AGENT_FFMPEG_SKILL_DIR")
 TOOLS_USED = ("probe", "graphics", "overlay")
 # flags of the ffmpeg-skill input_schema this adapter emits; checked against the live contract in doctor

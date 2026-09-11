@@ -4,9 +4,10 @@ Durable, repository-local notes for whichever Claude Code session picks this rep
 conversation history; trust this file, the code, the tests, and live CI/PR state — in that order. Re-verify
 anything here that looks stale before acting on it (dates are given so staleness is checkable).
 
-Last verified: 2026-09-08, against `main` @ `a9e8d38` + an uncommitted worktree implementing issue #10 items 2-4
-(`video_overlay`, `document.options.audio_stream`, `dropped_non_av_streams` surfacing) -- item 1 (`shape`)
-deliberately deferred, see "Known limitations" below.
+Last verified: 2026-09-11, against `main` @ `94ba430` (PRs #1-#13 merged) + open PR #15
+(`fix/ffmpeg-skill-1x-compat`, draft) fixing a real, currently-broken CI issue described below. PR #14 (GitHub
+automation) is open, draft, unrelated. Issue #16 (opened while getting #15's own CI green) tracks a newly-found,
+deterministic macOS-only pixel-threshold failure in an unrelated pre-existing test — see "Known limitations".
 
 ## What this repo is
 
@@ -17,64 +18,74 @@ additive; see "Known limitations" for when a version bump would actually be requ
 
 ## Current state (verified, not assumed)
 
-- `main` @ `a9e8d38` implements **8 element types**: `title`, `lower_third`, `text_overlay`, `image_overlay`,
-  `bug`, `chapter`, `progress`, `countdown`. **An uncommitted worktree adds a 9th, `video_overlay`**, plus two
-  cross-cutting fixes, closing issue #10 items 2-4 (item 1, re-investigating `shape`, is explicitly out of scope
-  for that pass -- it needs a larger architectural decision about multi-tool-per-element pipelines that ADR-8
-  already flags as its own design question):
-  - **`video_overlay`** (`ffmpeg-skill/overlay --video`, ffmpeg-skill 0.11.0): video-on-video picture-in-picture,
-    mirroring `image_overlay`'s position/margin/scale/opacity model, plus optional `chromakey`/
-    `chromakey_similarity`/`chromakey_blend` (green-screen removal). Animation is `"none"` (`--video` never
-    applies a fade); its own Capability id `motion_graphics.video_overlay` (not shared with `.overlay`). ADR-15.
-  - **`document.options.audio_stream`** (ffmpeg-skill 0.12.0's `--audio-stream` on `graphics`/`overlay`):
-    threaded through `executor._argv()` to every stage, included in stage identity. ADR-16.
-  - **`dropped_non_av_streams`** (ffmpeg-skill 0.12.1): read off every tool response (`adapter.ToolRun`),
-    surfaced per-operation (`StageResult.to_dict()`) and as a top-level `warnings[]` entry when `true`. ADR-17.
-  - `adapter.SUPPORTED_MIN` raised `0.9.1` -> `0.12.1` (the floor now needed for all three of the above; see
-    `adapter.py`'s comment and `docs/ffmpeg-skill.md`).
-  - The full `contract`/`doctor`/`validate`/`plan`/`run` CLI, PathPolicy, deterministic provenance, a 9-entry
-    `provides` cross-repo Capability-id field, and **313 tests** (unit/security/contract/integration, real-media
-    E2E, up from 263 -- run against `ffmpeg-skill` 0.12.2 at `/home/user/ffmpeg-skill` in this environment).
-    **Re-run the CI matrix (Ubuntu/macOS/Windows × Python 3.9/3.11) before merging** -- not done from this
-    worktree.
-  - **`shape` remains the only unimplemented element type**, and issue #10 item 1's re-investigation (chaining
-    a hypothetical `background.py` + `overlay --video` into one composite "shape") was deliberately **not**
-    attempted here: `executor._argv()` is a one-tool-per-element model, and a two-stage pipeline for one element
-    is a real design question (per-element identity/caching currently assumes exactly one delegate tool call),
-    not a small follow-up like `video_overlay` was. Needs its own decision before implementing, not a quick ADR.
-- **The actual downstream consumer already exists and was verified end-to-end, repeatedly, after every single one
-  of the 8 PRs above, and again for the `video_overlay` worktree above**: `kajisho5/video-production-agent` ships
+- `main` @ `94ba430` implements **9 element types**: `title`, `lower_third`, `text_overlay`, `image_overlay`,
+  `bug`, `chapter`, `progress`, `countdown`, `video_overlay` (PiP/chroma-key, `ffmpeg-skill/overlay --video`,
+  ADR-15, #11). `document.options.audio_stream` (ADR-16) and `dropped_non_av_streams` surfacing (ADR-17) are also
+  merged (#11). `#13` reconciled `adapter.FLAGS_USED` with what `executor.py` actually emits. The full
+  `contract`/`doctor`/`validate`/`plan`/`run` CLI, PathPolicy, deterministic provenance, a 9-entry `provides`
+  cross-repo Capability-id field. **`shape` remains the only unimplemented element type** — issue #10 item 1's
+  re-investigation (chaining a hypothetical `background.py` + `overlay --video` into one composite "shape") is
+  still open and deliberately unattempted: `executor._argv()` is a one-tool-per-element model, and a two-stage
+  pipeline for one element is a real design question (how does per-element identity/caching work for two tool
+  calls?), not a quick follow-up. Scope it as its own design pass before touching `model.py`/`executor.py` — do
+  not build a raw filter string as a shortcut (ADR-1 still applies).
+- **A real, currently-broken CI issue was found and fixed on `fix/ffmpeg-skill-1x-compat` (2026-09-11) — check
+  whether that branch/its PR merged before assuming `SUPPORTED_MAX_EXCLUSIVE = (1, 0, 0)` and bare-hex colour
+  flags still work**: `ffmpeg-skill`'s own release automation had, that same day, the *exact* class of bug this
+  repo's `.github/release-drafter.yml` was independently found and fixed for (see PR #14's history) — an
+  autolabeler rule applied `major` to any PR whose body contained the literal string "BREAKING CHANGE", firing on
+  three routine Dependabot PRs whose bodies quoted upstream release notes verbatim. That published `ffmpeg-skill`
+  `1.0.0`/`1.0.1`/`1.0.2` with zero actual compatibility change (`ffmpeg-skill`'s own `CHANGELOG.md`: "treat 1.0.x
+  as 0.16.x under a different name" — verified independently here too, by diffing `scripts/` between `0.16.14`
+  and `1.1.0`: zero differences), then fixed its own pipeline and published a **formal, tested** 1.x stability
+  guarantee in its `docs/contract.md` (tool ids/CLI args/`--json` keys/exit codes never removed or retyped for
+  the whole 1.x line, pinned by a snapshot test on that side). Two fixes, on `fix/ffmpeg-skill-1x-compat`:
+  1. `adapter.SUPPORTED_MAX_EXCLUSIVE` raised `(1, 0, 0)` -> `(2, 0, 0)`, trusting that documented/tested
+     guarantee (ADR-18) — CI now clones `ffmpeg-skill`'s current `main` (`1.1.0` as of this writing) and was
+     failing the version-gate outright before this.
+  2. **A real, previously-latent bug found while investigating**: `ffmpeg-skill/overlay`'s `validate_color()` (a
+     filter-graph-injection guard, not a formatting whim) now rejects a bare `RRGGBB` colour value with no `0x`/
+     `#` prefix. This affects `--font-color`/`--border-color`/`--box-color` (`text_overlay`) and `--chromakey`
+     (`video_overlay`) identically, but only `chromakey` had a real-media test exercising a bare-hex value, so
+     only that one test's failure was visible before this fix. `executor._color_arg()` now prefixes a bare
+     6-hex-digit value with `0x` before it reaches either `overlay.py` or `graphics.py` (safe for `graphics.py`
+     too — its own `color_hex()`/`ff_color()` already strip and re-add `0x` internally, verified as a no-op
+     there). `model._color()` is unchanged — it validates request *shape*, not engine wire format. ADR-18;
+     `test_color_arg_prefixes_bare_hex_but_passes_named_colors_and_prefixed_hex_through` (unit),
+     `test_text_overlay_renders_with_bare_hex_colors` (real-media, closes the previously-untested gap). **315
+     tests pass** against both `ffmpeg-skill` `0.16.14` and `1.1.0` (verified directly against both, not assumed)
+     — up from 313.
+- **The actual downstream consumer already exists and was verified end-to-end, repeatedly, across every PR
+  including this fix**: `kajisho5/video-production-agent` ships
   `src/video_agent/tools/motion_graphics/adapter.py` with a **pinned** `contract_0.1.0.json` and a strict
-  `check_contract()`/`contract_drift()` compatibility gate. Its full `tests/test_adapter_motion_graphics.py`
-  (21 tests, including `RealSkillTests`, which spins up real `ffmpeg` and drives this Skill's actual CLI, not a
-  fake) passed 100% against every intermediate state of this checkout, with **zero `check_contract()` errors**
-  throughout — new element types/fields show up only as informational `contract_drift()` entries (the agent's
-  pinned snapshot doesn't know about them yet), never a hard failure. Re-verified directly against the live
-  contract produced by this worktree (`video_overlay` added): `check_contract()` errors == `[]`, `contract_drift()`
-  shows exactly one new entry (`element_types video_overlay: installed but not pinned`) — additive, as expected.
-  This is the strongest available evidence the contract stays correct. **Re-run this before merging any future PR
-  that touches `contract.py`, `model.ELEMENT_TYPES`, or the request/response shape** (see the recipe below) — it
-  caught a real compatibility break during #4 (a new parameter type broke `check_contract()` outright; solved
-  with `string`+`enum` instead, ADR-11) before it ever reached a PR.
+  `check_contract()`/`contract_drift()` compatibility gate. `check_contract()` errors remain `[]` after this fix
+  (the version-window/colour-flag change doesn't touch the request/response *shape* at all, only `adapter.py`'s
+  internal version gate and `executor.py`'s argv formatting) — `contract_drift()` shows the accumulated,
+  expected, purely-additive drift from every element type/field added since the agent's snapshot was pinned
+  (five new element types, `provides`, `audio_stream`, `dropped_non_av_streams` — none of it a hard failure).
+  **Re-run the compatibility recipe below before merging any future PR that touches `contract.py`,
+  `model.ELEMENT_TYPES`, or the request/response shape** — it caught a real compatibility break during #4 (a new
+  parameter type broke `check_contract()` outright; solved with `string`+`enum` instead, ADR-11) before it ever
+  reached a PR.
 - **`kajisho5/AI-video-production-OS`** (the "OS" repo named in ecosystem-wide prompts) still had, as of last
   check, only a placeholder README on its `main` branch — no real architecture merged there yet. The substantive
   architecture (Capability registry, `docs/CAPABILITY_MATRIX.md`, `registry/contract.py` conformance checker)
   lives on an **unmerged** branch there, `claude/ai-video-production-os-arch-*` (branch suffix will change; find
   it with `git ls-remote --heads https://github.com/kajisho5/AI-video-production-OS`). Treat anything from that
   repo as provisional until it lands on `main` — verify against the actual branch content, never assume a cited
-  filename exists just because a PR description says so (this happened once already, in #2's original
-  description; corrected in `f2b7a91` before merge). **Re-check whether it has merged to `main` yet** before
+  filename exists just because a PR description says so. **Re-check whether it has merged to `main` yet** before
   trusting this paragraph or the provisional ids below.
-- `contract.CAPABILITY_IDS` (all verified valid against the OS registry's `validate_provides_entry()`, all
-  matching the real, unmerged `docs/CAPABILITY_MATRIX.md` for the 4 element types it actually covers):
-  `title` -> `motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, `text_overlay`/
-  `image_overlay` -> `motion_graphics.overlay` (matrix-verified), and `bug`/`chapter`/`progress`/`countdown`/
-  `video_overlay` -> `motion_graphics.{bug,chapter,progress,countdown,video_overlay}` (this repository's **own
-  provisional ids** — that matrix predates all five; reconcile if the OS side ever assigns different ones once
-  merged).
+- `contract.CAPABILITY_IDS` (all `bug`/`chapter`/`progress`/`countdown`/`video_overlay` -> `motion_graphics.*`
+  ids are this repository's **own provisional choices** — the OS matrix predates all five; reconcile if the OS
+  side ever assigns different ones once merged). `title`/`lower_third`/`text_overlay`/`image_overlay` ids are
+  matrix-verified against that unmerged branch's `docs/CAPABILITY_MATRIX.md`.
 - Issue #10 (re-investigate `shape`; PiP/chroma-key ownership gap; missing `--audio-stream`;
-  `dropped_non_av_streams` discarded) is open upstream as of last check; items 2-4 are addressed by the
-  uncommitted worktree described above, item 1 deliberately deferred. No open pull requests as of last check.
+  `dropped_non_av_streams` discarded) is **still open upstream** even though items 2-4 are merged (#11/#13) — item
+  1 (`shape`) is the only thing keeping it open; close it (or narrow its scope to just item 1) once that's
+  resolved or explicitly re-deferred with a documented reason. PR #14 (GitHub automation: release-drafter,
+  autolabel, Dependabot, CodeQL, PR template, SECURITY.md) is open and draft, unrelated to the fix above — see
+  its own PR comments for what's blocking it (was: the `chromakey`/version-window CI failure this fix addresses;
+  check whether it's since been rebased onto the fix).
 
 ## How to re-verify OS/agent compatibility
 
@@ -126,9 +137,10 @@ type, a new top-level key), before merging.
 
 - `shape` is the only unsupported element type left (`unsupported_element_types` in the contract). No
   `ffmpeg-skill` tool draws an arbitrary shape (position/size/color) without this Skill building a raw filter
-  string itself, which is forbidden outright (ADR-1). Implementing it requires `ffmpeg-skill` to gain a typed
-  shape tool first — that is a change to a sibling repository, out of this repository's authority; do not attempt
-  to work around it by constructing filter strings here.
+  string itself, which is forbidden outright (ADR-1). Issue #10 item 1 argues `background.py` + `overlay --video`
+  could compose into "shape" without a raw filter — real, but blocked on a genuine design question (two-tool
+  pipeline for one element; see "Current state" above), not on ffmpeg-skill lacking a capability. Scope it as its
+  own design pass, do not build a raw filter string as a shortcut.
 - Every element type has a fixed, honestly-labeled `animation` value that is not `"configurable"`, except
   `text_overlay`/`image_overlay` (the only two with a real, configurable `fade`): `title`/`bug`/`chapter` get
   `"builtin_fade"`, `lower_third` gets `"builtin_slide_fade"`, `countdown` gets `"builtin_pulse"` (a genuinely
@@ -138,11 +150,21 @@ type, a new top-level key), before merging.
   branches, ADR-15). No slide/move/scale as a *configurable* `Animation` — see ADR-2 for why, and do not add one
   without a working, typed, parameterised delegate in `ffmpeg-skill` behind it (this Skill never builds its own
   filter expressions — ADR-1).
-- `adapter.SUPPORTED_MIN` was raised from `0.9.1` to `0.12.1` when `video_overlay`/`audio_stream`/
-  `dropped_non_av_streams` were added — that is the oldest `ffmpeg-skill` release carrying every flag/field this
-  adapter now relies on. If a future change adds a dependency on some still-newer `ffmpeg-skill` flag or response
-  field, raise `SUPPORTED_MIN` again the same way rather than leaving `FLAGS_USED`'s contract check as the only
-  (partial — it only catches missing *flags*, not missing *response fields* like `dropped_non_av_streams`) guard.
+- `adapter.SUPPORTED_MIN = (0, 12, 1)`; `adapter.SUPPORTED_MAX_EXCLUSIVE = (2, 0, 0)` as of ADR-18 (was `(1, 0,
+  0)`). If a future `ffmpeg-skill` release actually breaks its own documented 1.x stability guarantee (check its
+  `docs/contract.md` and `CHANGELOG.md` first — a real break should be announced as a `2.0.0`), lower the ceiling
+  back or pin more narrowly rather than assuming the guarantee still holds. If a future change adds a dependency
+  on some still-newer `ffmpeg-skill` flag or response field, raise `SUPPORTED_MIN` the same way `0.12.1` was
+  chosen — the oldest release carrying everything relied on — rather than leaving `FLAGS_USED`'s contract check
+  as the only (partial — it only catches missing *flags*, not missing *response fields*) guard.
+- **Colour values passed to `ffmpeg-skill` must be engine-formatted, not just request-shaped.** `model._color()`
+  accepts a bare 6-hex-digit string (by design — that's this Skill's own `color` type, unrelated to what any
+  particular engine flag requires); `executor._color_arg()` is the one place that becomes the literal token
+  `ffmpeg-skill` needs (`0x`-prefixed for bare hex, passed through unchanged for a named colour or an
+  already-prefixed value) — see ADR-18. If a future element type or parameter ever bypasses `_color_arg()`
+  (builds its own argv without going through the existing colour-flag call sites), it will silently reintroduce
+  this exact bug the next time `ffmpeg-skill` tightens `validate_color()` further (e.g. to also reject `@`-alpha
+  without a prefix, or something not yet anticipated) — route every colour value through `_color_arg()`, always.
 - The pinned agent-side contract is `0.1.0`. A **new element type, a new top-level key, or a new `animation`
   string value is safe** (verified additive four times over, per the compatibility recipe above — `check_contract()`
   never inspects the `animation` field's value at all). A **new parameter `type`** (something other than
@@ -155,35 +177,31 @@ type, a new top-level key), before merging.
   bounded even where the underlying `ffmpeg-skill` tool itself places no limit (`[1, 60]`, ADR-14) — the same
   class of concern `MAX_ELEMENTS` bounds for the request as a whole, applied at the single-element level. Apply
   the same reasoning to any future element type with a similar "repeat N times" parameter.
+- **`test_countdown_draws_a_digit_throughout_its_window[0.5]` fails deterministically on `macos-latest` CI**
+  (issue #16, found while getting PR #15 green) — identical luma values across two independent parallel runs on
+  the same commit (`2.298` vs. a `> 3.0` threshold), while Ubuntu/Windows pass cleanly on the same commit. Not a
+  flake (a real flake disagrees between runs; this doesn't); not caused by PR #15's actual diff (colour-flag
+  formatting, version window — nothing to do with `countdown`). Most likely cause, not confirmed: macOS CI
+  installs whatever `evermeet.cx` currently serves as latest `ffmpeg`, independent of `ffmpeg-skill`'s version,
+  and that build may have drifted since this test's threshold was calibrated (PR #8) — but this is plausibly also
+  the *first* time this test has ever run against current reality on macOS, since the version-gate PR #15 fixed
+  rejected `ffmpeg-skill 1.1.0` outright before any test body ran there. Needs someone with real macOS access to
+  root-cause properly (render directly, measure, don't just widen the threshold as a guess — the same standard
+  ADR-11/ADR-12's original pixel checks were held to).
 
 ## Next highest-value task (as of last check)
 
-The "implement every `ffmpeg-skill/graphics` template" arc (ADR-8) is **done** — `bug`, `chapter`, `progress`,
-`countdown` all shipped across #4/#6/#7/#8. Issue #10 (ecosystem-wide gap inventory against ffmpeg-skill 0.12.2)
-identified four more gaps; items 2-4 are implemented in the uncommitted worktree described above ("Current state"),
-item 1 deliberately deferred:
-
-1. **`shape` (issue #10 item 1) still has no ADR update, and is the real next task.** The issue's own framing:
-   `background.py` (ffmpeg-skill 0.11.0, generates an exact-size/duration solid-colour or gradient clip) chained
-   with `overlay.py --video` (this worktree's `video_overlay`, just added) could compose into exactly ADR-8's
-   definition of "shape" with zero raw filter construction. The blocker is real, not stale, though: this Skill's
-   `executor._argv()` (and the identity/caching model built on it) assumes exactly one delegate-tool call per
-   element — a two-stage `background`+`overlay --video` pipeline for a *single* element is a genuine design
-   question (how does identity/caching work for a two-tool element? does it fit the existing `StageResult` shape
-   at all, or does "shape" become two `StageResult`s per element?), not a quick follow-up ADR the way `bug`/
-   `chapter`/`progress`/`countdown` were. Scope it as its own design pass before touching `model.py`/`executor.py`
-   — do not build a raw filter string as a shortcut around the multi-tool question (ADR-1 still applies).
-2. **Watch `kajisho5/AI-video-production-OS`'s architecture branch for a merge to `main`.** When it lands, diff
-   this repo's `provides`/`CAPABILITY_IDS` choices (`motion_graphics.{bug,chapter,progress,countdown,video_overlay}`,
-   all provisional) against whatever actually merged and reconcile if it differs — this is now 5 ids to reconcile,
-   not 1.
-3. **Done, not just flagged, for `video_overlay` specifically** (mirroring the #4/#6/#7/#8 audit style): it has one
-   `path`-type parameter (`video_path`) unlike `bug`/`chapter`/`progress`/`countdown`, so — unlike those four — it
-   *does* need explicit PathPolicy coverage; added (`test_missing_video_overlay_asset_fails`,
-   `test_video_overlay_source_without_video_stream_rejected` in `tests/test_integration.py`, plus
-   `video_overlay_element` added to `test_forbidden_field_rejected_for_every_element_type`'s parametrization in
-   `tests/test_security.py`). This is the case CLAUDE.md's own prior note anticipated ("if a future element type
-   ever gets a `path` parameter, add it to the PathPolicy tests explicitly then").
-4. Do not invent OS integration machinery beyond what a *verified* sibling contract/registry actually reads (see
+1. **Check whether PR #15 (`fix/ffmpeg-skill-1x-compat`) has merged yet.** If not, that's the most urgent thing:
+   CI is currently broken against `ffmpeg-skill`'s real `main` (the version-gate rejection affects ~40 tests, not
+   just the one `chromakey` failure PR #14's history documents). Verify the fix still applies cleanly and the
+   evidence in ADR-18 still holds (re-diff `ffmpeg-skill`'s current `scripts/` against `0.16.14` — if it's no
+   longer zero differences, the "safe to trust the 1.x line" reasoning needs re-checking, not just re-asserting).
+2. **Issue #16** (macOS-only `countdown` pixel-threshold failure, above) needs a real macOS environment to
+   root-cause properly — pick it up if one is available.
+3. **`shape` (issue #10 item 1)** is the real remaining feature gap — scope the two-tool-pipeline design question
+   (per-element identity/caching for a `background`+`overlay --video` composite) before implementing anything.
+4. **Watch `kajisho5/AI-video-production-OS`'s architecture branch for a merge to `main`.** When it lands, diff
+   this repo's `provides`/`CAPABILITY_IDS` choices against whatever actually merged and reconcile if it differs.
+5. Do not invent OS integration machinery beyond what a *verified* sibling contract/registry actually reads (see
    the compatibility recipe above) — the OS layer is still mostly unbuilt; keep this Skill's standalone
    contract/doctor/CLI as the source of truth for its own behavior.

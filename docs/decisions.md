@@ -375,3 +375,42 @@ existed as the top-level catch-all, previously always empty).
 `dropped_non_av_streams: false` as a warning on every single render would train a caller to ignore `warnings[]`
 altogether, the opposite of what a warning is for. `test_dropped_non_av_streams_false_is_not_reported_as_a_warning`
 in `tests/test_unit.py` pins this down.
+
+## ADR-18: `SUPPORTED_MAX_EXCLUSIVE` raised to `2.0.0`; colour flags to `overlay.py` are `0x`-prefixed
+
+**Decision**: `adapter.SUPPORTED_MAX_EXCLUSIVE` moves from `(1, 0, 0)` to `(2, 0, 0)`, and every colour value this
+Skill passes to `ffmpeg-skill/overlay` (`--font-color`/`--border-color`/`--box-color`/`--chromakey`) — and, for
+uniformity, `ffmpeg-skill/graphics` (`--text-color`/`--primary`) — is normalised to carry an explicit `0x` prefix
+when it is a bare 6-hex-digit value (`executor._color_arg()`), rather than passed through exactly as the request
+supplied it.
+
+**Why the ceiling moved**: on 2026-09-11, `ffmpeg-skill`'s own release automation had the exact bug this
+repository's own `.github/release-drafter.yml` was independently found and fixed for the same day (see the PR
+that also fixed `SUPPORTED_MAX_EXCLUSIVE` here) — an autolabeler rule applied `major` to any PR whose *body*
+contained the literal string "BREAKING CHANGE", including three routine Dependabot dependency bumps whose PR
+bodies quoted an upstream project's release notes verbatim. That published `ffmpeg-skill` `1.0.0`/`1.0.1`/`1.0.2`
+with zero actual compatibility change over `0.16.15` (`ffmpeg-skill`'s own `CHANGELOG.md`: "no user-facing or
+compatibility change... treat 1.0.x as 0.16.x under a different name") — confirmed independently here by diffing
+`scripts/` between the last-verified `0.16.14` and current `1.1.0`: zero differences. `ffmpeg-skill` then fixed
+its own pipeline (no autolabeler rule produces `major` from text again) and formalised a **tested** 1.x stability
+guarantee in `docs/contract.md`: tool ids, CLI arguments, `--json`/`contract`/`doctor` output keys, and exit codes
+are never removed/renamed/retyped for the whole 1.x line, enforced by a pinned `tools/list` snapshot test on
+their side. `SUPPORTED_MAX_EXCLUSIVE = (2, 0, 0)` trusts that documented, tested promise rather than re-verifying
+it release by release — the same reasoning `SUPPORTED_MIN` already applies to the floor, just at the other end.
+Verified against the real, current `1.1.0` checkout (not assumed): the full test suite (315 tests, after the
+colour-flag fix below) passes unmodified against both `0.16.14` and `1.1.0`.
+
+**Why the colour-flag fix, found while investigating the version-window failure**: raising the ceiling alone
+still left one real-media test failing — `ffmpeg-skill/overlay`'s `validate_color()` (a filter-graph-injection
+guard: an unvalidated colour value string-formatted straight into a filter graph is a real, demonstrated
+injection vector on `ffmpeg-skill`'s side) now rejects a bare `RRGGBB` value with no `0x`/`#` prefix or named
+colour, where it previously accepted one. This is not `chromakey`-specific: `overlay.py` runs the *same*
+`validate_color()` over `--font-color`/`--border-color`/`--box-color` too, but no existing real-media test had
+ever exercised a bare-hex value for those three (only `chromakey`'s did), so the latent issue was invisible until
+investigated — `test_text_overlay_renders_with_bare_hex_colors` (`tests/test_integration.py`) closes that gap.
+`model._color()` is left unchanged (it validates request *shape*, not engine wire format — a bare-hex `color`
+value is and remains valid input); `executor._color_arg()` is the one place engine-specific argv formatting for
+colours happens, the same principle already used for the custom-`font_file` `cwd` trick in the same function.
+Applied uniformly to both tools' colour flags (not just `overlay.py`'s) because `graphics.py`'s own `color_hex()`/
+`ff_color()` already strip and re-add `0x` internally, so prefixing there is a verified no-op, not a behaviour
+change — one rule instead of two, covering both a currently-affected tool and a currently-safe one identically.
