@@ -8,6 +8,7 @@ tests/
 │                              variant, a short PiP clip, a PNG logo, sample text)
 ├── test_unit.py           -- model validation, timeline rules, canonical JSON / identity determinism, error table, PathPolicy, fonts, dropped_non_av_streams plumbing (fake FfmpegSkill, no real ffmpeg)
 ├── test_security.py       -- shell non-use, tool allowlist, forbidden-field rejection (incl. nested), path traversal / symlink escape, env allowlist, injection payloads as *content*
+├── test_compat.py         -- ffmpeg-skill capability detection: fake 0.x / 1.10 / 2.x / future / contract-less checkouts, --quality vs --crf, --overwrite, no version window
 ├── test_contract.py       -- contract <-> implementation consistency, contract/doctor are deterministic and valid JSON, skill == contract alias
 └── test_integration.py    -- real ffmpeg-skill + real media: title, lower_third, text_overlay, image_overlay, video_overlay (PiP + chroma-key), bug, chapter, progress, countdown, fade, audio_stream track selection, multi-element pipelines, reuse + tamper detection, Unicode text, cancellation, CLI exit codes
 ```
@@ -23,6 +24,10 @@ Integration and contract tests need a real `ffmpeg-skill` checkout with a workin
 Point at one with `MOTION_GRAPHICS_FFMPEG_SKILL_DIR=/path/to/ffmpeg-skill`, or clone it to `vendor/ffmpeg-skill`
 next to this repository. `conftest.py` fails the session (not skips) if none is found, mirroring
 `audio-production-skill`'s policy: a missing dependency should be loud, not a quietly-green suite.
+
+Any ffmpeg-skill version works (there is no version window, `decisions.md` ADR-18). CI runs the suite against
+ffmpeg-skill `main` on every platform (on every push and daily) and against 0.12.5 (`87c84f2`, the oldest verified
+commit) on Linux; to reproduce the old end locally, clone ffmpeg-skill and `git checkout 87c84f2`.
 
 ## What "real media E2E" means here (STEP 19-20)
 
