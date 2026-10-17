@@ -755,7 +755,9 @@ def test_argv_for_video_overlay_with_chromakey_includes_chromakey_flags():
     el = _video_overlay_element_obj(chromakey="00ff00", chromakey_similarity=0.3, chromakey_blend=0.2)
     asset = {"path": "/resolved/webcam.mp4", "sha256": "a" * 64, "size": 1}
     _, argv, _ = ex._argv(el, "in.mp4", "out.mp4", asset, None, crf=18, preset="medium")
-    assert argv[argv.index("--chromakey") + 1] == "00ff00"
+    # a bare RRGGBB is passed with a 0x prefix: ffmpeg-skill 2.x's overlay refuses bare hex, and every version (and
+    # ffmpeg itself) reads 0xRRGGBB as the same colour (executor._overlay_color)
+    assert argv[argv.index("--chromakey") + 1] == "0x00ff00"
     assert argv[argv.index("--chromakey-similarity") + 1] == "0.3"
     assert argv[argv.index("--chromakey-blend") + 1] == "0.2"
 
@@ -889,7 +891,7 @@ def test_stage_identity_differs_for_different_audio_stream():
 # needing to actually reproduce ffmpeg-skill's own subtitle-preservation fallback to get a True value.
 from pathlib import Path  # noqa: E402
 
-from motion_graphics.adapter import ToolRun  # noqa: E402
+from motion_graphics.adapter import SkillInfo, ToolRun  # noqa: E402
 
 
 class _FakeFfmpegSkillForDroppedStreams:
@@ -900,6 +902,11 @@ class _FakeFfmpegSkillForDroppedStreams:
 
     def __init__(self, dropped: bool):
         self.dropped = dropped
+
+    def info(self):
+        # what a 0.12.x checkout reports: --crf, no --overwrite (the encoder flags _argv() emits come from here)
+        return SkillInfo(Path("."), "0.12.5", "1.0", {}, [], {"encoder_quality_flag": {"graphics": "--crf", "overlay": "--crf"},
+                                                              "overwrite_flag": {"graphics": False, "overlay": False}})
 
     def probe(self, path, timeout=None):
         return {"video": {"width": 4, "height": 4}, "duration": 3.0, "audio_streams": []}

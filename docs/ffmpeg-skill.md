@@ -14,16 +14,26 @@ string as a flag):
 Every `graphics`/`overlay` invocation may also carry `--audio-stream` (`document.options.audio_stream`) to select
 which audio track of the source survives.
 
-## Version window
+## Compatibility: capability detection, no version window
 
-`adapter.SUPPORTED_MIN = 0.12.1`, `adapter.SUPPORTED_MAX_EXCLUSIVE = 1.0.0`, `adapter.SUPPORTED_CONTRACT_VERSION =
-"1.0"`. `FfmpegSkill.info()` reads `scripts/_contract.py --json --static`, checks the version window and contract
-version, and that `graphics`/`overlay`/`probe` still declare the flags in `adapter.FLAGS_USED`. Any mismatch is a
-`TOOL_ERROR` (retryable) surfaced by `doctor` and refused by `run`/`plan` before anything renders. `0.12.1` is the
-floor (raised from `0.9.1`) because it is the oldest release carrying every flag/field this adapter now relies on:
-`--video`/`--chromakey*` on `overlay` (0.11.0), `--audio-stream` on `graphics`/`overlay` (0.12.0), and
-`dropped_non_av_streams` in both tools' `--json` response (0.12.1) — the last of which is not itself a CLI flag,
-so `FLAGS_USED`'s contract check alone would not have caught a stale checkout missing it.
+There is no ffmpeg-skill version window (ADR-18 in `decisions.md`). `FfmpegSkill.info()` reads the flags each tool
+takes from the located checkout — `scripts/_contract.py --json --static`, then `_contract.py --json`, then
+`scripts/contract.py --json`, and finally each tool's own `--help` — and `adapter.check_tools()` compares them with
+what this skill emits:
+
+- every flag in `adapter.REQUIRED_FLAGS` must be present (a missing one is a `TOOL_ERROR` naming it, surfaced by
+  `doctor` and refused by `run` before anything renders). They imply ffmpeg-skill >= 0.12.0 (`--video`/`--chromakey*`
+  on `overlay`: 0.11.0, `--audio-stream`: 0.12.0), but that floor is detected, not computed from a version number;
+- encoder quality: `--quality` when offered (1.10+; 2.0 removed `--crf` on `graphics`/`overlay`), else `--crf` — the
+  same CRF scale, so `document.options.crf` means the same thing on every version;
+- `--overwrite` is passed when offered (1.10+ refuses to replace an existing output without it, older releases
+  reject it); the consent is this skill's own `document.output.overwrite` check;
+- a bare `RRGGBB` colour on `overlay` is passed as `0xRRGGBB` (2.x validates colour flags; every version reads it the
+  same way).
+
+`contract_version` (`"1.0"` in every release so far) and the version number are reported, never gated on.
+`doctor --json` shows what was detected under `checks.ffmpeg_skill.detected`. CI runs against ffmpeg-skill `main`
+(every push, and daily) and against 0.12.5 (`87c84f2`, the oldest verified commit).
 
 ## Discovery order (`FfmpegSkill.candidates`)
 
@@ -34,14 +44,15 @@ so `FLAGS_USED`'s contract check alone would not have caught a stale checkout mi
 5. `./vendor/ffmpeg-skill`
 6. `../ffmpeg-skill`
 
-## Flags used, by tool (`adapter.FLAGS_USED`)
+## Flags used, by tool (`adapter.REQUIRED_FLAGS`, `FLAG_ALTERNATIVES`, `OPTIONAL_FLAGS`)
 
 - `probe`: `inputs` (positional)
-- `graphics`: `input`, `output`, `template`, `start`, `end`, `crf`, `preset`, `audio_stream`, `title`, `subtitle`,
-  `name`, `position`, `count_from`, `text_color`, `primary`, `json`
-- `overlay`: `input`, `output`, `position`, `margin`, `start`, `end`, `opacity`, `crf`, `preset`, `audio_stream`,
-  `fade`, `text`, `font_size`, `font_color`, `border`, `border_color`, `box`, `box_color`, `font`, `font_file`,
-  `image`, `scale`, `scale_percent`, `video`, `chromakey`, `chromakey_similarity`, `chromakey_blend`, `json`
+- `graphics`: `input`, `output`, `template`, `start`, `end`, `quality`|`crf`, `preset`, `audio_stream`, `title`,
+  `subtitle`, `name`, `position`, `count_from`, `text_color`, `primary`, `json`, and `overwrite` when offered
+- `overlay`: `input`, `output`, `position`, `margin`, `start`, `end`, `opacity`, `quality`|`crf`, `preset`,
+  `audio_stream`, `fade`, `text`, `font_size`, `font_color`, `border`, `border_color`, `box`, `box_color`, `font`,
+  `font_file`, `image`, `scale`, `scale_percent`, `video`, `chromakey`, `chromakey_similarity`, `chromakey_blend`,
+  `json`, and `overwrite` when offered
 
 ## `dropped_non_av_streams` (ffmpeg-skill 0.12.1)
 

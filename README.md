@@ -12,8 +12,9 @@ accepts or constructs an arbitrary ffmpeg filter, shell command, or expression.
 ## Quick start
 
 Requires Python 3.9+ and a working `ffmpeg`/`ffprobe` on `PATH`, plus a checkout of
-[`ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill) (see [`docs/ffmpeg-skill.md`](docs/ffmpeg-skill.md) for
-how it's located).
+[`ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill) of any version: what it can do is detected from its own
+contract rather than its version number (see [`docs/ffmpeg-skill.md`](docs/ffmpeg-skill.md) for how it's located
+and checked).
 
 ```bash
 pip install -e .
