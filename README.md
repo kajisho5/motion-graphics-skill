@@ -1,4 +1,34 @@
-# motion-graphics-skill
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/app-icon-dark.png">
+    <img src="brand/app-icon.png" width="128" alt="motion-graphics-skill app icon">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/motion-graphics-skill-wordmark-white.svg">
+    <img src="brand/logo/motion-graphics-skill-wordmark-black.svg" height="48" alt="motion-graphics-skill">
+  </picture>
+</p>
+
+<p align="center"><b>Deterministic motion-graphics rendering execution Skill for the AI Video Production Ecosystem.</b><br>
+Renders a typed, already-decided Graphics Document onto a video through ffmpeg-skill, and reports provenance.
+It is not an AI agent: it never decides what to show, and never accepts an arbitrary ffmpeg filter or shell command.</p>
+
+<p align="center">
+  <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#responsibility-boundary">Responsibility boundary</a> ·
+  <a href="#contract--agent-integration">Contract / agent integration</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/testing.md">Testing</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/kajisho5/motion-graphics-skill/actions/workflows/tests.yml"><img src="https://github.com/kajisho5/motion-graphics-skill/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+</p>
 
 Deterministic motion-graphics **rendering execution** Skill for the AI Video Production Ecosystem. It renders a
 typed, already-decided Graphics Document — titles, lower thirds, free-form text overlays, image/logo overlays,
