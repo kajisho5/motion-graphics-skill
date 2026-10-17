@@ -5,17 +5,26 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+  # ffmpeg-skill releases independently and often: run against its current main every day, so a release that breaks
+  # this skill shows up even when nothing here changed (there is no version window to hide behind, ADR-18)
+  schedule:
+    - cron: "17 6 * * *"
 
 jobs:
   test:
+    name: ${{ matrix.os }} / py${{ matrix.python }} / ffmpeg-skill ${{ matrix.ffmpeg_skill_label }}
     strategy:
       fail-fast: false
       matrix:
+        # every platform runs against ffmpeg-skill main (the newest release); one Linux job keeps the oldest commit
+        # this skill is verified against (ffmpeg-skill 0.12.5: --crf only, no --overwrite, a single _common.py), so
+        # both ends of the detected-capability range stay covered
         include:
-          - {os: ubuntu-latest, python: "3.9"}
-          - {os: ubuntu-latest, python: "3.11"}
-          - {os: windows-latest, python: "3.11"}
-          - {os: macos-latest, python: "3.11"}
+          - {os: ubuntu-latest, python: "3.9", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: windows-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: macos-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: 87c84f23b4546379795107a49524f4d9803c9cee, ffmpeg_skill_label: "0.12.5 (oldest verified)"}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -25,33 +34,37 @@ jobs:
 
       - name: Install ffmpeg (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-noto-cjk
 
       - name: Install ffmpeg (macOS)
-        # macos-latest runners ship with an ffmpeg already on PATH, so `brew install ffmpeg` is a silent no-op
-        # against that pre-existing (often minimal, no libfreetype/drawtext) build. Install a known full static
-        # build instead so drawtext/fontconfig are actually available, and verify it before running any tests.
+        # Homebrew's plain `ffmpeg` formula is a lean build without libfreetype/drawtext, and the runner may
+        # already have it on PATH. `ffmpeg-full` is Homebrew's complete build (drawtext, fontconfig); it is
+        # keg-only, so put its bin first on PATH and verify drawtext before any test runs.
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          curl -sSL https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip -o ffmpeg.zip
-          curl -sSL https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip -o ffprobe.zip
-          unzip -o ffmpeg.zip -d /usr/local/bin
-          unzip -o ffprobe.zip -d /usr/local/bin
-          chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
-          /usr/local/bin/ffmpeg -version
-          /usr/local/bin/ffmpeg -filters 2>&1 | grep -q drawtext || { echo "::error::installed ffmpeg is missing the drawtext filter"; exit 1; }
-          # Apple Silicon runners put /opt/homebrew/bin (a pre-installed, possibly minimal ffmpeg) ahead of
-          # /usr/local/bin on PATH; prepend it here so later steps resolve the full build just installed.
-          echo "/usr/local/bin" >> "$GITHUB_PATH"
+          brew install ffmpeg-full
+          FULL_BIN="$(brew --prefix ffmpeg-full)/bin"
+          "$FULL_BIN/ffmpeg" -version
+          "$FULL_BIN/ffmpeg" -hide_banner -filters 2>&1 | grep -q drawtext || { echo "::error::ffmpeg-full is missing the drawtext filter"; exit 1; }
+          echo "$FULL_BIN" >> "$GITHUB_PATH"
 
       - name: Install ffmpeg (Windows)
         if: runner.os == 'Windows'
         run: choco install ffmpeg -y
 
-      - name: Clone ffmpeg-skill
+      - name: Clone ffmpeg-skill (${{ matrix.ffmpeg_skill_label }})
         shell: bash
-        run: git clone --depth 1 https://github.com/kajisho5/ffmpeg-skill vendor/ffmpeg-skill
+        env:
+          FFMPEG_SKILL_REF: ${{ matrix.ffmpeg_skill_ref }}
+        run: |
+          if [ "$FFMPEG_SKILL_REF" = "main" ]; then
+            git clone --depth 1 https://github.com/kajisho5/ffmpeg-skill vendor/ffmpeg-skill
+          else
+            git clone https://github.com/kajisho5/ffmpeg-skill vendor/ffmpeg-skill
+            git -C vendor/ffmpeg-skill checkout "$FFMPEG_SKILL_REF"
+          fi
+          echo "ffmpeg-skill $(git -C vendor/ffmpeg-skill rev-parse HEAD) $(grep -m1 '"version"' vendor/ffmpeg-skill/package.json)"
 
       - name: Install package
         run: |

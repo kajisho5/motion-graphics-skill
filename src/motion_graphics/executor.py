@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -59,6 +60,17 @@ class StageResult:
         if self.dropped_non_av_streams is not None:
             d["dropped_non_av_streams"] = self.dropped_non_av_streams
         return d
+
+
+_BARE_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}(@.*)?$")
+
+
+def _overlay_color(value: str) -> str:
+    """A model colour (COLOR_RE: a name or bare RRGGBB, optional @alpha) as ffmpeg-skill/overlay's colour flags take
+    it. Newer ffmpeg-skill releases validate those flags and accept hex only as 0xRRGGBB / #RRGGBB; older ones pass
+    the value straight to ffmpeg, which reads 0xRRGGBB the same way. So a bare hex value gets the 0x prefix, which
+    every version accepts with the same meaning; a colour name is passed unchanged."""
+    return "0x" + value if _BARE_HEX_RE.match(value) else value
 
 
 class Executor:
@@ -245,6 +257,18 @@ class Executor:
             params["font"] = font.to_provenance()
         return params
 
+    def _encode_flags(self, tool: str, crf: int, preset: str) -> List[str]:
+        """The encoder flags of ffmpeg-skill/<tool> as the located checkout spells them: `--quality` (1.10+; 2.0 removed
+        `--crf`) or `--crf` (older), same CRF scale either way; plus `--overwrite` where the checkout takes it (1.10+
+        refuses to replace an existing output without it; older releases reject the flag). Overwrite consent was
+        already checked against document.output.overwrite before anything rendered, and a stale intermediate is
+        removed before its stage runs, so passing the flag never replaces a file this skill was not allowed to."""
+        info = self.skill.info() if self.skill is not None else None
+        flags = [info.quality_flag(tool) if info is not None else "--crf", str(crf), "--preset", preset]
+        if info is not None and info.takes_overwrite(tool):
+            flags.append("--overwrite")
+        return flags
+
     # ---- argv construction: every value is a validated number, a closed-vocabulary string, or a resolved path.
     # Returns (tool, argv, cwd): cwd is None except for a custom font_file (see the comment below).
     def _argv(self, el: GraphicsElement, stage_input: str, stage_output: str, asset: Optional[Dict[str, Any]],
@@ -253,7 +277,7 @@ class Executor:
         spec = ELEMENT_TYPES[el.type]
         if spec["tool"] == "graphics":
             argv = [stage_input, "-o", stage_output, "--template", spec["template"],
-                    "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--crf", str(crf), "--preset", preset]
+                    "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), *self._encode_flags("graphics", crf, preset)]
             if audio_stream is not None:
                 argv += ["--audio-stream", str(audio_stream)]
             if el.type == "title":
@@ -281,17 +305,17 @@ class Executor:
 
         argv = [stage_input, "-o", stage_output, "--position", p["position"], "--margin", str(p["margin"]),
                 "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--opacity", fmt_number(p["opacity"]),
-                "--crf", str(crf), "--preset", preset]
+                *self._encode_flags("overlay", crf, preset)]
         if audio_stream is not None:
             argv += ["--audio-stream", str(audio_stream)]
         if el.animation is not None and el.animation.kind == "fade":
             argv += ["--fade", fmt_number(el.animation.parameters["duration"])]
         cwd: Optional[str] = None
         if el.type == "text_overlay":
-            argv += ["--text", p["text"], "--font-size", str(p["font_size"]), "--font-color", p["font_color"],
-                     "--border", str(p["border_width"]), "--border-color", p["border_color"]]
+            argv += ["--text", p["text"], "--font-size", str(p["font_size"]), "--font-color", _overlay_color(p["font_color"]),
+                     "--border", str(p["border_width"]), "--border-color", _overlay_color(p["border_color"])]
             if p.get("box"):
-                argv += ["--box", "--box-color", p["box_color"]]
+                argv += ["--box", "--box-color", _overlay_color(p["box_color"])]
             if font is not None:
                 if font.kind == "system":
                     argv += ["--font", font.engine_arg["font"]]
@@ -323,7 +347,7 @@ class Executor:
             if p.get("scale_percent") is not None:
                 argv += ["--scale-percent", fmt_number(p["scale_percent"])]
             if p.get("chromakey"):
-                argv += ["--chromakey", p["chromakey"], "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
+                argv += ["--chromakey", _overlay_color(p["chromakey"]), "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
                          "--chromakey-blend", fmt_number(p["chromakey_blend"])]
         return "overlay", argv, cwd
 

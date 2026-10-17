@@ -19,6 +19,6 @@
 ## What is explicitly out of scope for this Skill's own enforcement
 
 - `ffmpeg`/`ffprobe` binary integrity and their own CVEs: this Skill trusts the `ffmpeg-skill` checkout it locates
-  (version-window checked, see `docs/ffmpeg-skill.md`) exactly as `audio-production-skill` does.
+  (capability-checked: every flag this skill emits must be declared by it, see `docs/ffmpeg-skill.md`) exactly as `audio-production-skill` does.
 - Malicious video/image *content* (e.g. a crafted file designed to exploit an ffmpeg decoder bug): out of scope
   for a Skill whose job is to call ffmpeg-skill's own tools, which is also `ffmpeg-skill`'s own stated boundary.

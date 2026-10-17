@@ -375,3 +375,40 @@ existed as the top-level catch-all, previously always empty).
 `dropped_non_av_streams: false` as a warning on every single render would train a caller to ignore `warnings[]`
 altogether, the opposite of what a warning is for. `test_dropped_non_av_streams_false_is_not_reported_as_a_warning`
 in `tests/test_unit.py` pins this down.
+
+## ADR-18: no ffmpeg-skill version window; what the located checkout can do is detected
+
+**Decision**: `adapter.FfmpegSkill.info()` no longer compares ffmpeg-skill's version number with a window
+(`SUPPORTED_MIN = 0.12.1`, `SUPPORTED_MAX_EXCLUSIVE = 1.0.0` are gone) and no longer refuses a `contract_version`
+other than `"1.0"` (it is reported). Instead it reads the flags each tool takes — from `scripts/_contract.py --json
+--static`, then `_contract.py --json`, then `scripts/contract.py --json`, and finally each tool's own `--help` — and
+`adapter.check_tools()` decides:
+
+- `adapter.REQUIRED_FLAGS` must all be present (they are what `executor._argv()` emits unconditionally); a missing
+  one is still a `TOOL_ERROR` naming the flag. Together they imply ffmpeg-skill >= 0.12.0, so that is the effective
+  floor, but it is detected, never computed from a version string.
+- `adapter.FLAG_ALTERNATIVES`: the encoder-quality flag is `--quality` when offered (ffmpeg-skill 1.10+; 2.0 removed
+  `--crf` from `graphics`/`overlay`), otherwise `--crf`. Same CRF scale and default either way, so
+  `document.options.crf` keeps its meaning.
+- `adapter.OPTIONAL_FLAGS`: `--overwrite` is passed when offered (ffmpeg-skill 1.10+ refuses to replace an existing
+  output without it; older releases reject the flag). This skill's own guard (`document.output.overwrite`, checked
+  before anything renders) is the consent; stale intermediates are deleted before their stage runs.
+- `dropped_non_av_streams` (0.12.1) is a response field: read when present, omitted when absent (ADR-17), so it
+  needs no gate.
+- `overlay`'s colour flags get a `0x` prefix on a bare `RRGGBB` (`executor._overlay_color`): ffmpeg-skill 2.x
+  validates them and accepts hex only as `0xRRGGBB`/`#RRGGBB`; older releases hand the value to ffmpeg, which reads
+  `0xRRGGBB` as the same colour.
+- A checkout without `_contract.py doctor` gets `unknown` (not `unsupported`) for ffmpeg/filter capabilities.
+
+`doctor --json` reports what was detected under `checks.ffmpeg_skill.detected` (`source`, `encoder_quality_flag`,
+`overwrite_flag`, `common_layout`, `removed`). The contract keeps `ffmpeg_skill.version_window` as an object (a
+downstream adapter checks its shape) with both bounds `null`, and adds `compatibility`, `required_flags`,
+`flag_alternatives` and `optional_flags`.
+
+**Why**: the upper bound refused every ffmpeg-skill release from 1.0.0 on ("ffmpeg-skill 2.10.3 is outside the
+supported window [0.12.1, 1.0.0)") even though the only real breaking changes for this skill were the `--crf`
+rename, the `--overwrite` requirement and the stricter colour validation, all handled above. A version number says
+nothing about which flags exist; the contract does. CI runs the suite against ffmpeg-skill `main` on every push and
+daily, and against the oldest verified commit (0.12.5), so both ends of the detected range stay exercised.
+`tests/test_compat.py` pins the detection against fake 0.x, 1.10-1.x, 2.x, future and contract-less checkouts.
+
