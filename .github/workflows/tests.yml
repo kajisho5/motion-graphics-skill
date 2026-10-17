@@ -34,7 +34,7 @@ jobs:
 
       - name: Install ffmpeg (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-noto-cjk
 
       - name: Install ffmpeg (macOS)
         # Homebrew's plain `ffmpeg` formula is a lean build without libfreetype/drawtext, and the runner may
