@@ -25,7 +25,8 @@ jobs:
           - {os: windows-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
           - {os: macos-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
           - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: 87c84f23b4546379795107a49524f4d9803c9cee, ffmpeg_skill_label: "0.12.5 (oldest verified)"}
-    runs-on: ${{ matrix.os }}
+    # ubuntu-latest is Ubuntu 26.04, which has no Python 3.9 build; keep 3.9 on the newest image that does
+    runs-on: ${{ matrix.python == '3.9' && startsWith(matrix.os, 'ubuntu') && 'ubuntu-24.04' || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

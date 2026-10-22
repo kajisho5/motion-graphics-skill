@@ -37,6 +37,22 @@ def _luma(path: str, t: float, crop: str) -> float:
     return float(m.group(1))
 
 
+def _luma_diff(path: str, reference: str, t: float, crop: str) -> float:
+    """Mean absolute per-pixel luma difference between two videos in a cropped region at time t (blend=difference,
+    then signalstats YAVG). Unlike comparing two region means, a bright fill and a dark border cannot cancel out.
+    Both inputs get the same colour tags first: the stored pixel values are compared, and FFmpeg >= 8 would otherwise
+    insert a colour conversion in front of blend when an output is tagged BT.709 and its source is untagged."""
+    same = "setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+    graph = (f"[0:v]{same},crop={crop},format=yuv420p[a];[1:v]{same},crop={crop},format=yuv420p[b];"
+             "[a][b]blend=all_mode=difference,signalstats,metadata=print")
+    cmd = ["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "info", "-ss", str(t), "-i", str(path), "-ss", str(t), "-i", str(reference),
+           "-filter_complex", graph, "-frames:v", "1", "-f", "null", "-"]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    m = re.search(r"YAVG=([\d.]+)", r.stdout + r.stderr)
+    assert m, f"no YAVG found for {path} vs {reference} @ {t}s: stdout={r.stdout!r} stderr={r.stderr[-2000:]!r}"
+    return float(m.group(1))
+
+
 def _probe(skill_dir, path: str) -> dict:
     r = subprocess.run(["python3", str(Path(skill_dir) / "scripts" / "probe.py"), str(path)], capture_output=True, text=True, check=True)
     return json.loads(r.stdout)
@@ -339,17 +355,23 @@ def test_countdown_renders_valid_video(skill_dir, workspace):
 
 @pytest.mark.parametrize("t", [0.5, 3.5])
 def test_countdown_draws_a_digit_throughout_its_window(skill_dir, workspace, t):
-    # count_from=3 over [0, 4] splits into 4 equal 1s segments (one digit each, 3/2/1/0); a centered crop window
-    # sized empirically to the actual fontsize=57 rendered digit on this 320x180 fixture. Checked at the first and
-    # last segment to confirm a digit is drawn throughout the window, not only near the start.
+    # count_from=3 over [0, 4] splits into 4 equal 1s segments (one digit each, 3/2/1/0), each drawn centred at
+    # fontsize=57 on this 320x180 fixture, so the 40x60 window at the centre lies inside every digit's glyph box.
+    # Checked at the first and last segment to confirm a digit is drawn throughout the window, not only near the start.
+    # The measure is the mean *absolute* per-pixel difference from the source: comparing the two windows' mean luma
+    # let the digit's yellow fill and dark border cancel on the yellow/blue bar edge behind it (2.9 on FFmpeg 8.0, with
+    # the digit correctly drawn). The control window sits on the same two bars below the digit, where nothing is drawn:
+    # it takes whatever the re-encode does to the background (nothing, or with an older ffmpeg-skill on FFmpeg 8 a
+    # whole-frame BT.601 -> BT.709 conversion of the untagged source, 8.5 there), so the margin over it is the digit.
+    # Measured: digit window 27-36, control 0-8.5.
     ex = _executor(skill_dir, workspace)
     resp = ex.response(request_doc([countdown_element(count_from=3, start=0, end=4)], output=f"out/countdown_{t}.mp4"))
     assert resp["ok"] is True
     out = resp["output"]["path"]
-    crop = "40:60:140:60"
-    luma_with_digit = _luma(out, t, crop)
-    luma_source = _luma(str(workspace / "video.mp4"), t, crop)
-    assert abs(luma_with_digit - luma_source) > 3.0, f"countdown did not measurably draw a digit at t={t}s"
+    source = str(workspace / "video.mp4")
+    digit = _luma_diff(out, source, t, "40:60:140:60")
+    control = _luma_diff(out, source, t, "40:30:140:145")
+    assert digit - control > 15.0, f"countdown did not measurably draw a digit at t={t}s (mean |diff| {digit:.2f}, control {control:.2f})"
 
 
 def test_missing_image_asset_fails(skill_dir, workspace):
