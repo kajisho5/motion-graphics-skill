@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import FLAGS_USED, SUPPORTED_CONTRACT_VERSION, SUPPORTED_MAX_EXCLUSIVE, SUPPORTED_MIN, TOOLS_USED
+from .adapter import FLAG_ALTERNATIVES, FLAGS_USED, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS, TOOLS_USED
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
@@ -106,8 +106,15 @@ def skill_contract() -> Dict[str, Any]:
                       "executables": ["python3 <ffmpeg-skill>/scripts/{probe,graphics,overlay}.py (argv lists)"],
                       "executable_resolution": "ffmpeg-skill directory: --ffmpeg-skill, MOTION_GRAPHICS_FFMPEG_SKILL_DIR, VIDEO_AGENT_FFMPEG_SKILL_DIR, ~/.claude/skills/ffmpeg-skill, ./vendor/ffmpeg-skill, ../ffmpeg-skill; ffmpeg/ffprobe: PATH lookup by ffmpeg-skill",
                       "shell": False, "arbitrary_executables": False, "arbitrary_filters": False, "network": False, "input_mutation": False, "ai": False},
-        "ffmpeg_skill": {"contract_version": SUPPORTED_CONTRACT_VERSION, "version_window": {"min": ".".join(map(str, SUPPORTED_MIN)), "max_exclusive": ".".join(map(str, SUPPORTED_MAX_EXCLUSIVE))},
-                         "tools_used": list(TOOLS_USED), "flags_used": {k: list(v) for k, v in FLAGS_USED.items()}},
+        "ffmpeg_skill": {"contract_version": KNOWN_CONTRACT_VERSION,
+                         # kept as an object (consumers check its shape); both bounds are null: no version is refused by number
+                         "version_window": {"min": None, "max_exclusive": None},
+                         "compatibility": "capability detection, no version window: a checkout of any version is used when every required flag is "
+                                          "present in its contract (or --help); doctor reports what was detected (docs/decisions.md ADR-18)",
+                         "tools_used": list(TOOLS_USED), "flags_used": {k: list(v) for k, v in FLAGS_USED.items()},
+                         "required_flags": {k: list(v) for k, v in REQUIRED_FLAGS.items()},
+                         "flag_alternatives": {t: {g: list(a) for g, a in groups.items()} for t, groups in FLAG_ALTERNATIVES.items()},
+                         "optional_flags": {k: list(v) for k, v in OPTIONAL_FLAGS.items()}},
         "request": {"schema": REQUEST_SCHEMA_ID, "id_pattern": ID_RE.pattern, "forbidden_fields": sorted(FORBIDDEN_KEYS),
                     "shape": {"schema": REQUEST_SCHEMA_ID, "video": {"path": "file"}, "output": {"path": "file", "overwrite?": False},
                               "elements": [{"id": "id", "type": "|".join(sorted(ELEMENT_TYPES)), "start": 0, "end": 1,

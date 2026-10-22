@@ -23,7 +23,12 @@ CORE_CAPABILITIES = ("filter:drawtext", "filter:drawbox", "filter:overlay", "fil
 
 
 def ffmpeg_skill_doctor(skill: FfmpegSkill, timeout: float = 120.0) -> Dict[str, Any]:
-    argv = [sys.executable, str(skill.directory / "scripts" / "_contract.py"), "doctor", "--json"]
+    """ffmpeg-skill's own environment detection. A checkout without `_contract.py doctor` yields {"_unavailable": True}:
+    every capability is then `unknown` (not detected either way), never `unsupported`."""
+    script = skill.directory / "scripts" / "_contract.py"
+    if not script.is_file():
+        return {"_exit_code": None, "_unavailable": True}
+    argv = [sys.executable, str(script), "doctor", "--json"]
     code, out, err, _ = skill._popen(argv, timeout)
     try:
         doc = json.loads(out or "{}")
@@ -40,6 +45,11 @@ def capability_status(skill_info: Optional[Any], ffdoc: Dict[str, Any]) -> Dict[
     status: Dict[str, str] = {}
     have_skill = skill_info is not None and skill_info.supported
     status["ffmpeg-skill"] = "supported" if have_skill else "unsupported"
+    if have_skill and ffdoc.get("_unavailable"):
+        # this ffmpeg-skill has no doctor to ask: nothing detected either way; output validation reports the truth per run
+        for cap in ["ffmpeg", "ffprobe", *CORE_CAPABILITIES]:
+            status[cap] = "unknown"
+        return status
     ff_ok = bool(ffdoc.get("ffmpeg")) and have_skill
     fp_ok = bool(ffdoc.get("ffprobe")) and have_skill
     status["ffmpeg"] = "supported" if ff_ok else "unsupported"
@@ -122,12 +132,17 @@ def doctor_report(ffmpeg_skill_dir: Optional[str] = None, workspace: Optional[st
         info = skill.info()
         checks["ffmpeg_skill"] = {"status": "ok" if info.supported else "fail", "directory": str(info.directory), "version": info.version,
                                   "contract_version": info.contract_version, "tools_used": sorted(info.tools.keys() & set(("probe", "graphics", "overlay"))),
+                                  "compatibility": "capability detection (no version window)", "detected": dict(info.features),
                                   "problems": info.problems}
         problems += ["ffmpeg-skill: " + p for p in info.problems]
         ffdoc = ffmpeg_skill_doctor(skill)
         checks["ffmpeg"] = {"status": "ok" if ffdoc.get("ffmpeg") else "missing", "version": ffdoc.get("ffmpeg"), "detected_by": "ffmpeg-skill doctor"}
         checks["ffprobe"] = {"status": "ok" if ffdoc.get("ffprobe") else "missing", "version": ffdoc.get("ffprobe"), "detected_by": "ffmpeg-skill doctor"}
-        if not ffdoc.get("ffmpeg") or not ffdoc.get("ffprobe"):
+        if ffdoc.get("_unavailable"):
+            checks["ffmpeg"] = {"status": "unknown", "detail": "this ffmpeg-skill has no `_contract.py doctor`; verified per run"}
+            checks["ffprobe"] = {"status": "unknown", "detail": "this ffmpeg-skill has no `_contract.py doctor`; verified per run"}
+            warnings.append("ffmpeg-skill offers no doctor command; ffmpeg/filter capabilities are unknown until a run")
+        elif not ffdoc.get("ffmpeg") or not ffdoc.get("ffprobe"):
             problems.append("ffmpeg / ffprobe not detected by ffmpeg-skill doctor")
     except MotionGraphicsError as e:
         checks["ffmpeg_skill"] = {"status": "missing", "detail": e.message, "tried": e.details.get("tried")}

@@ -30,8 +30,9 @@ additive; see "Known limitations" for when a version bump would actually be requ
     threaded through `executor._argv()` to every stage, included in stage identity. ADR-16.
   - **`dropped_non_av_streams`** (ffmpeg-skill 0.12.1): read off every tool response (`adapter.ToolRun`),
     surfaced per-operation (`StageResult.to_dict()`) and as a top-level `warnings[]` entry when `true`. ADR-17.
-  - `adapter.SUPPORTED_MIN` raised `0.9.1` -> `0.12.1` (the floor now needed for all three of the above; see
-    `adapter.py`'s comment and `docs/ffmpeg-skill.md`).
+  - The ffmpeg-skill version window is gone (ADR-18, 2026-10-17): `adapter.check_tools()` detects the flags the
+    located checkout offers (`--quality` vs `--crf`, `--overwrite`), and only a missing *required* flag refuses it.
+    Verified against ffmpeg-skill 0.12.5, 1.26.0 and 2.10.3 (main); CI runs `main` and 0.12.5 (`87c84f2`).
   - The full `contract`/`doctor`/`validate`/`plan`/`run` CLI, PathPolicy, deterministic provenance, a 9-entry
     `provides` cross-repo Capability-id field, and **313 tests** (unit/security/contract/integration, real-media
     E2E, up from 263 -- run against `ffmpeg-skill` 0.12.2 at `/home/user/ffmpeg-skill` in this environment).
@@ -138,11 +139,11 @@ type, a new top-level key), before merging.
   branches, ADR-15). No slide/move/scale as a *configurable* `Animation` — see ADR-2 for why, and do not add one
   without a working, typed, parameterised delegate in `ffmpeg-skill` behind it (this Skill never builds its own
   filter expressions — ADR-1).
-- `adapter.SUPPORTED_MIN` was raised from `0.9.1` to `0.12.1` when `video_overlay`/`audio_stream`/
-  `dropped_non_av_streams` were added — that is the oldest `ffmpeg-skill` release carrying every flag/field this
-  adapter now relies on. If a future change adds a dependency on some still-newer `ffmpeg-skill` flag or response
-  field, raise `SUPPORTED_MIN` again the same way rather than leaving `FLAGS_USED`'s contract check as the only
-  (partial — it only catches missing *flags*, not missing *response fields* like `dropped_non_av_streams`) guard.
+- There is no ffmpeg-skill version window (ADR-18). If a future change emits a new ffmpeg-skill flag, add it to
+  `adapter.REQUIRED_FLAGS` (or `FLAG_ALTERNATIVES`/`OPTIONAL_FLAGS` if it was renamed or is new), never a version
+  number; read a new response field defensively (present -> use, absent -> omit, as `dropped_non_av_streams` is).
+  The contract keeps `ffmpeg_skill.version_window` as an object with null bounds because
+  `video-production-agent`'s `check_contract()` requires it to be a dict.
 - The pinned agent-side contract is `0.1.0`. A **new element type, a new top-level key, or a new `animation`
   string value is safe** (verified additive four times over, per the compatibility recipe above — `check_contract()`
   never inspects the `animation` field's value at all). A **new parameter `type`** (something other than
