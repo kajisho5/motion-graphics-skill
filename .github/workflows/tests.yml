@@ -19,12 +19,22 @@ jobs:
         # every platform runs against ffmpeg-skill main (the newest release); one Linux job keeps the oldest commit
         # this skill is verified against (ffmpeg-skill 0.12.5: --crf only, no --overwrite, a single _common.py), so
         # both ends of the detected-capability range stay covered
+        #
+        # Linux jobs are pinned to ubuntu-24.04, not ubuntu-latest: when "ubuntu-latest" silently became 26.04,
+        # two things broke that are both about that image, not about this skill's own code (see the fix PR this
+        # comment shipped with for the evidence) -- (1) actions/setup-python has no Python 3.9 build for 26.04 at
+        # all yet (only 22.04/24.04; requires-python = ">=3.9" in pyproject.toml still means 3.9 needs covering,
+        # not dropping), and (2) the newer apt ffmpeg that 26.04 ships drifted `test_countdown_draws_a_digit_
+        # throughout_its_window`'s empirically-calibrated luma threshold just below its margin (2.888 vs > 3.0;
+        # the same drifting-"latest"-toolchain failure mode ADR-18/issue #16 already hit on macOS, fixed there by
+        # pinning Homebrew's ffmpeg-full instead of whatever's current -- this is the same fix, for apt on Linux).
+        # Bump past 24.04 deliberately, not by just following ubuntu-latest again, once there's a reason to.
         include:
-          - {os: ubuntu-latest, python: "3.9", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
-          - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: ubuntu-24.04, python: "3.9", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: ubuntu-24.04, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
           - {os: windows-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
           - {os: macos-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
-          - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: 87c84f23b4546379795107a49524f4d9803c9cee, ffmpeg_skill_label: "0.12.5 (oldest verified)"}
+          - {os: ubuntu-24.04, python: "3.11", ffmpeg_skill_ref: 87c84f23b4546379795107a49524f4d9803c9cee, ffmpeg_skill_label: "0.12.5 (oldest verified)"}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
