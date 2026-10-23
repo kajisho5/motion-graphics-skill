@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.1 — 2026-10-23
+
+- ci: bump GitHub Actions, and resolve release versions with release-drafter v7 dry-run (#24) (c6b42da)
+
 ## v0.1.0 — 2026-10-23
 
 - Add release automation, PR autolabeling, Dependabot, CodeQL, PR template, SECURITY.md (#14) (f4f02c6)
