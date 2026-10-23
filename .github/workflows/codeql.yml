@@ -1,0 +1,35 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 04:23 UTC -- an off-the-hour time, not a coordinated pattern that spikes GitHub's schedulers.
+    - cron: '23 4 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # This repository's own source (src/, tests/, .github/scripts/) is pure Python; vendor/ffmpeg-skill is
+        # cloned at test time by tests.yml and is not part of this repository's tree, so there is nothing else
+        # here for CodeQL to analyze.
+        language: ['python']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
