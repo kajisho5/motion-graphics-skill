@@ -46,7 +46,7 @@ jobs:
 
       - name: Resolve next version (release-drafter dry run)
         id: drafter
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           disable-releaser: true
           commitish: main
