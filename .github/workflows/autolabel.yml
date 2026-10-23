@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Apply labels from .github/release-drafter.yml's autolabeler rules
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter/autolabeler@v7
         with:
-          disable-releaser: true
+          config-name: release-drafter.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
