@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.2 — 2026-10-25
+
+- Add the Sponsor badge and .github/FUNDING.yml (#25) (18feee5)
+
 ## v0.1.1 — 2026-10-23
 
 - ci: bump GitHub Actions, and resolve release versions with release-drafter v7 dry-run (#24) (c6b42da)
