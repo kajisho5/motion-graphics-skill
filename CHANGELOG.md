@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0 — 2026-10-29
+
+- Implement sticker, hook and meme elements and options.platform; correct the shape and template claims (#26) (b927791)
+
 ## v0.1.2 — 2026-10-25
 
 - Add the Sponsor badge and .github/FUNDING.yml (#25) (18feee5)
