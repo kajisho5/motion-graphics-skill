@@ -190,7 +190,7 @@ def test_contract_states_no_version_window():
     assert fs["version_window"] == {"min": None, "max_exclusive": None}
     assert "capability detection" in fs["compatibility"]
     assert fs["flag_alternatives"]["graphics"]["encoder_quality"] == ["quality", "crf"]
-    assert fs["optional_flags"]["overlay"] == ["overwrite"]
+    assert fs["optional_flags"]["overlay"] == ["overwrite", "platform"]
 
 
 def test_doctor_without_ffmpeg_skill_doctor_reports_unknown_not_unsupported():

@@ -36,6 +36,12 @@ POSITION_NAMES = ("top-left", "top", "top-right", "left", "center", "right", "bo
 # subset of POSITION_NAMES, not the full 9-way position `text_overlay`/`image_overlay` support.
 CORNER_POSITION_NAMES = ("top-left", "top-right", "bottom-left", "bottom-right")
 
+# Destinations ffmpeg-skill's --platform knows (graphics and overlay): each edge's margin becomes that destination's
+# safe zone. The canonical names only -- not its aliases (fb, ig, x, yt, yt-shorts) -- and not `custom`, which is "no
+# safe zone" and so the same as leaving document.options.platform out. Whether the located checkout accepts one is
+# checked against its own choices at run time (executor.Executor._check_checkout).
+PLATFORM_NAMES = ("broadcast", "facebook", "instagram", "linkedin", "podcast", "reels", "shorts", "tiktok", "twitter", "youtube", "youtube-shorts")
+
 MAX_TEXT_LENGTH = 500
 MAX_TITLE_LENGTH = 200
 MAX_ELEMENTS = 64
@@ -80,7 +86,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "parameters": {
             "text": {"type": _STR, "required": True, "max_length": MAX_TEXT_LENGTH},
             "position": {"type": _POS, "required": False, "default": "bottom"},
-            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24, "platform_replaces_default": True},
             "font": {"type": _FONT, "required": False},
             "font_size": {"type": _INT, "required": False, "min": 8, "max": 300, "default": 42},
             "font_color": {"type": _COLOR, "required": False, "default": "white"},
@@ -99,7 +105,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "parameters": {
             "image_path": {"type": _PATH, "required": True},
             "position": {"type": _POS, "required": False, "default": "top-right"},
-            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24, "platform_replaces_default": True},
             "scale_width": {"type": _INT, "required": False, "min": 1, "max": 8192},
             "scale_percent": {"type": _NUM, "required": False, "min": 0.1, "max": 100.0},
             "opacity": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 1.0},
@@ -117,7 +123,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "parameters": {
             "video_path": {"type": _PATH, "required": True},
             "position": {"type": _POS, "required": False, "default": "bottom-right"},
-            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24, "platform_replaces_default": True},
             "scale_width": {"type": _INT, "required": False, "min": 1, "max": 8192},
             "scale_percent": {"type": _NUM, "required": False, "min": 0.1, "max": 100.0},
             "opacity": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 1.0},
@@ -202,12 +208,60 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
     },
+    # sticker / hook / meme are graphics templates ffmpeg-skill added after 0.12.5 (the oldest checkout this skill is
+    # verified against): each lists a `graphics-template:<name>` capability, which doctor derives from the checkout's own
+    # `--template` choices, so on an older checkout the type is reported unsupported and a request for it is refused
+    # before anything renders (docs/decisions.md ADR-19).
+    "sticker": {
+        "tool": "graphics", "template": "sticker",
+        "description": "Filled chip of short text in a corner (e.g. \"NEW\", \"LIVE NOW\") that pops in: the chip fades up while "
+                       "rising 0.25s into place, and fades out over the last 0.3s (ffmpeg-skill/graphics --template sticker); "
+                       "not configurable per element. The text is drawn in the template's fixed dark colour on a primary-colour "
+                       "plate, so only primary_color is exposed -- text_color would have no effect on this template.",
+        "animation": "builtin_pop",
+        "parameters": {
+            "text": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
+            "position": {"type": _STR, "required": False, "default": "top-right", "enum": CORNER_POSITION_NAMES},
+            "primary_color": {"type": _COLOR, "required": False},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264", "graphics-template:sticker"],
+    },
+    "hook": {
+        "tool": "graphics", "template": "hook",
+        "description": "Full-width opening card with a large centered title over a dark band, and a thin bar along the top of the "
+                       "frame that empties across the element's own start/end window so the viewer sees how long the card lasts "
+                       "(ffmpeg-skill/graphics --template hook, the short-form opener). The card stays up for the whole window: "
+                       "this skill passes the window's length as the template's own --duration. No fade.",
+        # The bar's emptying is driven entirely by the element's timeline, not by an alpha, and the band/title never fade
+        # (`enable` windows only) -- the same reasoning as `progress` for "none" (ADR-13).
+        "animation": "none",
+        "parameters": {
+            "title": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
+            "text_color": {"type": _COLOR, "required": False},
+            "primary_color": {"type": _COLOR, "required": False},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "filter:drawbox", "filter:overlay", "filter:color", "encoder:libx264", "graphics-template:hook"],
+    },
+    "meme": {
+        "tool": "graphics", "template": "meme",
+        "description": "Classic meme layout: heavy white upper-case lines with a black outline, one at the top margin and one at the "
+                       "bottom margin (ffmpeg-skill/graphics --template meme). At least one of top / bottom is required. Colours, "
+                       "position and size are fixed by the template, and there is no fade.",
+        "animation": "none",
+        "parameters": {
+            "top": {"type": _STR, "required": False, "max_length": MAX_TITLE_LENGTH},
+            "bottom": {"type": _STR, "required": False, "max_length": MAX_TITLE_LENGTH},
+        },
+        # cross-field rule _element() enforces and contract.py publishes as `constraints`
+        "at_least_one_of": ("top", "bottom"),
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264", "graphics-template:meme"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
 # support they cannot back with a renderer (STEP 9).
 UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {
-    "shape": "no typed delegate tool draws an arbitrary shape (position/size/color) without a raw ffmpeg filter string; needs a typed shape tool in ffmpeg-skill first",
+    "shape": "not implemented: a rectangle can be composed from ffmpeg-skill's background.py and overlay.py --video (docs/decisions.md ADR-8), but that is two tool calls for one element, which this skill's one-delegate-call-per-element stage model does not cover yet; it needs its own design decision, and building a raw ffmpeg filter string instead is not an option",
 }
 
 ANIMATION_KINDS: Dict[str, Dict[str, Any]] = {
@@ -406,7 +460,7 @@ def _animation(value: Any, element_type: str, where: str) -> Animation:
     return Animation(kind, params)
 
 
-def _element(value: Any, index: int) -> GraphicsElement:
+def _element(value: Any, index: int, platform_set: bool = False) -> GraphicsElement:
     where = f"elements[{index}]"
     top_level = ("id", "type", "start", "end", "parameters", "animation")
     obj = _obj(value, where, top_level, ("id", "type", "start", "end", "parameters"))
@@ -432,7 +486,11 @@ def _element(value: Any, index: int) -> GraphicsElement:
     parameters: Dict[str, Any] = {}
     for name, spec in pspec.items():
         if name not in praw:
-            if "default" in spec:
+            # With document.options.platform set, an omitted margin is the destination's safe zone (ffmpeg-skill's own
+            # --platform behaviour, which only applies when no --margin is sent), not the 24px default -- so the default
+            # is not materialised and the executor sends no --margin for this element. A margin the request gives is sent and wins (but see
+            # the contract's `platforms.effect`: ffmpeg-skill/overlay cannot tell an explicit 24 from its own default).
+            if "default" in spec and not (platform_set and spec.get("platform_replaces_default")):
                 parameters[name] = spec["default"]
             continue
         raw = praw[name]
@@ -468,6 +526,11 @@ def _element(value: Any, index: int) -> GraphicsElement:
         else:  # pragma: no cover
             raise MotionGraphicsError("INTERNAL_ERROR", f"unhandled parameter type {spec['type']!r}")
 
+    at_least_one = tspec.get("at_least_one_of")
+    if at_least_one and not any(name in parameters for name in at_least_one):
+        raise MotionGraphicsError("INVALID_REQUEST", f"{where}.parameters: at least one of {list(at_least_one)} is required for a {etype!r} element",
+                                   {"field": f"{where}.parameters", "at_least_one_of": list(at_least_one)})
+
     animation: Optional[Animation] = None
     if "animation" in obj:
         animation = _animation(obj["animation"], etype, f"{where}.animation")
@@ -497,7 +560,9 @@ def parse_request(document: Any) -> GraphicsDocument:
         raise MotionGraphicsError("INVALID_REQUEST", "document.elements must be a non-empty array", {"field": "elements"})
     if len(raw_elements) > MAX_ELEMENTS:
         raise MotionGraphicsError("INVALID_REQUEST", f"document.elements has more than {MAX_ELEMENTS} entries", {"field": "elements", "count": len(raw_elements)})
-    elements = [_element(e, i) for i, e in enumerate(raw_elements)]
+    options_peek = top.get("options")
+    platform_set = isinstance(options_peek, dict) and options_peek.get("platform") is not None
+    elements = [_element(e, i, platform_set) for i, e in enumerate(raw_elements)]
     seen: Dict[str, int] = {}
     for i, el in enumerate(elements):
         if el.element_id in seen:
@@ -506,7 +571,7 @@ def parse_request(document: Any) -> GraphicsDocument:
         seen[el.element_id] = i
 
     options_raw = top.get("options", {})
-    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream"), ())
+    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -528,5 +593,12 @@ def parse_request(document: Any) -> GraphicsDocument:
     if audio_stream is not None and (isinstance(audio_stream, bool) or not isinstance(audio_stream, int) or not (0 <= audio_stream <= 63)):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.audio_stream must be an integer within [0, 63]", {"field": "document.options.audio_stream"})
 
+    # Destination whose UI the graphics should stay out of (ffmpeg-skill --platform, graphics and overlay): every element's
+    # margin that the request does not give explicitly becomes that destination's safe zone. One value for the whole
+    # document, like audio_stream -- there is one output, so one destination. A closed vocabulary (PLATFORM_NAMES).
+    platform = options.get("platform")
+    if platform is not None and (not isinstance(platform, str) or platform not in PLATFORM_NAMES):
+        raise MotionGraphicsError("INVALID_REQUEST", f"document.options.platform must be one of {PLATFORM_NAMES}: {platform!r}", {"field": "document.options.platform"})
+
     return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
-                             {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream})
+                             {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform})

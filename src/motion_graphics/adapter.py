@@ -15,12 +15,14 @@
 
 Which ffmpeg-skill tools are used, and for what (docs/ffmpeg-skill.md):
   probe     input facts (resolution, duration, streams) and output validation
-  graphics  TITLE / LOWER_THIRD templates (built-in fade / slide animation, brand-free: colours passed explicitly)
+  graphics  the title, lower-third, bug, chapter, progress, countdown, sticker, hook and meme templates (built-in animation,
+            brand-free: colours passed explicitly); sticker/hook/meme only when the checkout has them (TEMPLATE_FLAGS)
   overlay   TEXT_OVERLAY (--text), IMAGE_OVERLAY (--image) and VIDEO_OVERLAY (--video, with optional
             --chromakey/--chromakey-similarity/--chromakey-blend), with position, margin, static scale, opacity
             and (text/image only) a configurable linear --fade in/out
 Every graphics/overlay invocation may also carry --audio-stream (document.options.audio_stream, ffmpeg-skill
-0.12.0) to select which audio track of the source survives."""
+0.12.0) to select which audio track of the source survives, and --platform (document.options.platform) to put each element's
+margin in a destination's safe zone, when the checkout has that flag."""
 from __future__ import annotations
 
 import json
@@ -65,10 +67,17 @@ FLAG_ALTERNATIVES: Dict[str, Dict[str, Tuple[str, ...]]] = {
 # emitted only when the checkout offers it: ffmpeg-skill 1.10+ refuses to replace an existing output without
 # --overwrite, and older releases reject the flag. This skill's own output policy (document.output.overwrite,
 # checked before anything renders) is the consent; the flag only passes it on.
-OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite",), "overlay": ("overwrite",)}
+# `platform` (ffmpeg-skill/graphics and /overlay --platform: margins become a destination's safe zone) is emitted only
+# when document.options.platform is set, and refused up front when the checkout has no such flag.
+OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite", "platform"), "overlay": ("overwrite", "platform")}
+# graphics templates the oldest verified ffmpeg-skill (0.12.5) does not have. An element type built on one needs the
+# name in the checkout's `--template` choices AND the flags listed here; the element type is refused up front when the
+# checkout lacks either (never attempted and left to fail inside the tool), and doctor reports it unsupported.
+TEMPLATE_FLAGS: Dict[str, Tuple[str, ...]] = {"sticker": ("text",), "hook": ("duration",), "meme": ("top", "bottom")}
 # every flag this adapter may emit, for the contract document (`ffmpeg_skill.flags_used`)
 FLAGS_USED: Dict[str, Tuple[str, ...]] = {
     tool: flags + tuple(f for alts in FLAG_ALTERNATIVES.get(tool, {}).values() for f in alts) + OPTIONAL_FLAGS.get(tool, ())
+    + (tuple(sorted({f for fl in TEMPLATE_FLAGS.values() for f in fl})) if tool == "graphics" else ())
     for tool, flags in REQUIRED_FLAGS.items()
 }
 _ENV_KEEP = ("PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TERM",
@@ -155,6 +164,19 @@ class SkillInfo:
     def takes_overwrite(self, tool: str) -> bool:
         return bool((self.features.get("overwrite_flag") or {}).get(tool))
 
+    def takes_platform(self, tool: str) -> bool:
+        return bool((self.features.get("platform_flag") or {}).get(tool))
+
+    def platform_names(self, tool: str) -> Optional[List[str]]:
+        """The destinations ffmpeg-skill/<tool> --platform accepts in this checkout, or None when its choices could not be read."""
+        names = (self.features.get("platforms") or {}).get(tool)
+        return list(names) if isinstance(names, list) else None
+
+    def template_support(self, template: str) -> Optional[bool]:
+        """Whether this checkout's graphics tool can render `template`: True / False when detected, None when it cannot be
+        told (e.g. a contract that does not list the `--template` choices)."""
+        return (self.features.get("template_support") or {}).get(template)
+
 
 def _common_layout(directory: Path) -> Optional[str]:
     """ffmpeg-skill's shared helpers: one `scripts/_common.py` before 2.0, a `scripts/_common/` package from 2.0 on.
@@ -171,6 +193,10 @@ def flags_from_help(text: str) -> Dict[str, Any]:
     (dashes -> underscores) and every name listed under "positional arguments". The same keys a contract's
     input_schema.properties carries, so check_tools() works on either."""
     props: Dict[str, Any] = {m.group(1).replace("-", "_"): {} for m in _HELP_FLAG_RE.finditer(text)}
+    for flag in ("template", "platform"):  # argparse prints the choices as `--flag {a,b,c}`; a contract carries them as `enum`
+        m = re.search(rf"--{flag}\s+\{{([^}}\s]+)\}}", text)
+        if m and flag in props:
+            props[flag] = {"enum": m.group(1).split(",")}
     in_positional = False
     for line in text.splitlines():
         if line.strip().lower().startswith("positional arguments"):
@@ -192,6 +218,9 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
     problems: List[str] = []
     quality: Dict[str, Optional[str]] = {}
     overwrite: Dict[str, bool] = {}
+    platform_flag: Dict[str, bool] = {}
+    platforms: Dict[str, Optional[List[str]]] = {}
+    template_support: Dict[str, Optional[bool]] = {}
     for tool, flags in REQUIRED_FLAGS.items():
         spec = tools.get(tool)
         if spec is None:
@@ -207,9 +236,23 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
                 missing.append("|".join(alternatives))
         if "overwrite" in OPTIONAL_FLAGS.get(tool, ()):
             overwrite[tool] = "overwrite" in props
+        if "platform" in OPTIONAL_FLAGS.get(tool, ()):
+            platform_flag[tool] = "platform" in props
+            choices = (props.get("platform") or {}).get("enum")
+            platforms[tool] = list(choices) if isinstance(choices, list) else None
+        if tool == "graphics":
+            template_choices = (props.get("template") or {}).get("enum")
+            for name, needed in TEMPLATE_FLAGS.items():
+                if any(f not in props for f in needed):
+                    template_support[name] = False
+                elif isinstance(template_choices, list):
+                    template_support[name] = name in template_choices
+                else:
+                    template_support[name] = None
         if missing:
             problems.append(f"ffmpeg-skill/{tool} lacks flag(s) {missing}")
-    return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite}
+    return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite, "platform_flag": platform_flag, "platforms": platforms,
+                      "template_support": template_support}
 
 
 class FfmpegSkill:

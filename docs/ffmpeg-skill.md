@@ -8,11 +8,12 @@ string as a flag):
 | Tool | Used for |
 |---|---|
 | `probe` | Source video facts (resolution, duration, presence of a video stream) and output validation after every render. |
-| `graphics` | `TITLE` (`--template title`) and `LOWER_THIRD` (`--template lower-third`) — built-in fade / slide + fade animation, brand-free (colours passed explicitly via `--text-color`/`--primary`, never through a `brand.json`). |
+| `graphics` | `TITLE` (`--template title`), `LOWER_THIRD` (`--template lower-third`), `BUG`, `CHAPTER`, `PROGRESS`, `COUNTDOWN`, and — only when the checkout has them — `STICKER` (`--template sticker`, `--text`), `HOOK` (`--template hook`, `--duration`) and `MEME` (`--template meme`, `--top`/`--bottom`). Built-in animation, brand-free (colours passed explicitly via `--text-color`/`--primary`, never through a `brand.json`). |
 | `overlay` | `TEXT_OVERLAY` (`--text`), `IMAGE_OVERLAY` (`--image`), and `VIDEO_OVERLAY` (`--video`, with optional `--chromakey`/`--chromakey-similarity`/`--chromakey-blend` green-screen removal) — position, margin, static scale, opacity, and (text/image only) a configurable `--fade`. |
 
 Every `graphics`/`overlay` invocation may also carry `--audio-stream` (`document.options.audio_stream`) to select
-which audio track of the source survives.
+which audio track of the source survives, and `--platform` (`document.options.platform`) to put each element's margin in a
+destination's safe zone.
 
 ## Compatibility: capability detection, no version window
 
@@ -29,7 +30,12 @@ what this skill emits:
 - `--overwrite` is passed when offered (1.10+ refuses to replace an existing output without it, older releases
   reject it); the consent is this skill's own `document.output.overwrite` check;
 - a bare `RRGGBB` colour on `overlay` is passed as `0xRRGGBB` (2.x validates colour flags; every version reads it the
-  same way).
+  same way);
+- `--platform` is passed only when `document.options.platform` is set, and the request is refused up front when the checkout has
+  no such flag on a tool it needs, or does not know that destination (the choices are read from the contract's `enum`, else `--help`);
+- the `sticker`, `hook` and `meme` templates (`adapter.TEMPLATE_FLAGS`) are used only when the checkout's `--template` choices and
+  flags have them. An older checkout (0.12.5 has none of them, nor `--platform`) stays fully usable for every other element type, and
+  `doctor` reports these three `unsupported` (ADR-19).
 
 `contract_version` (`"1.0"` in every release so far) and the version number are reported, never gated on.
 `doctor --json` shows what was detected under `checks.ffmpeg_skill.detected`. CI runs against ffmpeg-skill `main`
@@ -48,11 +54,12 @@ what this skill emits:
 
 - `probe`: `inputs` (positional)
 - `graphics`: `input`, `output`, `template`, `start`, `end`, `quality`|`crf`, `preset`, `audio_stream`, `title`,
-  `subtitle`, `name`, `position`, `count_from`, `text_color`, `primary`, `json`, and `overwrite` when offered
+  `subtitle`, `name`, `position`, `count_from`, `text_color`, `primary`, `json`; `overwrite` and `platform` when offered; and per
+  template when offered: `text` (sticker), `duration` (hook), `top`/`bottom` (meme)
 - `overlay`: `input`, `output`, `position`, `margin`, `start`, `end`, `opacity`, `quality`|`crf`, `preset`,
   `audio_stream`, `fade`, `text`, `font_size`, `font_color`, `border`, `border_color`, `box`, `box_color`, `font`,
   `font_file`, `image`, `scale`, `scale_percent`, `video`, `chromakey`, `chromakey_similarity`, `chromakey_blend`,
-  `json`, and `overwrite` when offered
+  `json`; `overwrite` and `platform` when offered
 
 ## `dropped_non_av_streams` (ffmpeg-skill 0.12.1)
 

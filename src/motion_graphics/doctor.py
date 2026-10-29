@@ -12,7 +12,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import DOCTOR_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import FfmpegSkill
+from .adapter import TEMPLATE_FLAGS, FfmpegSkill
 from .errors import MotionGraphicsError
 from .fonts import FONT_REGISTRY
 from .model import ANIMATION_KINDS, ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES
@@ -45,6 +45,11 @@ def capability_status(skill_info: Optional[Any], ffdoc: Dict[str, Any]) -> Dict[
     status: Dict[str, str] = {}
     have_skill = skill_info is not None and skill_info.supported
     status["ffmpeg-skill"] = "supported" if have_skill else "unsupported"
+    # graphics templates that only newer ffmpeg-skill releases have: detected from the checkout's own `--template` choices
+    # and flags (adapter.check_tools), so an older checkout reports sticker/hook/meme unsupported rather than failing a run
+    for template in TEMPLATE_FLAGS:
+        found = skill_info.template_support(template) if skill_info is not None and have_skill else False
+        status[f"graphics-template:{template}"] = "unknown" if found is None else ("supported" if found else "unsupported")
     if have_skill and ffdoc.get("_unavailable"):
         # this ffmpeg-skill has no doctor to ask: nothing detected either way; output validation reports the truth per run
         for cap in ["ffmpeg", "ffprobe", *CORE_CAPABILITIES]:
