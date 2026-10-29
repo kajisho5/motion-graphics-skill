@@ -12,12 +12,12 @@ graphics model, security boundary, and testing notes.
 ## Ask for this, not that
 
 Ask this Skill to render: an exact `title`/`lower_third`/`text_overlay`/`image_overlay`/`video_overlay`/`bug`/
-`chapter`/`progress`/`countdown` element, with exact `start`/`end` seconds and exact parameter values already
+`chapter`/`progress`/`countdown`/`sticker`/`hook`/`meme` element, with exact `start`/`end` seconds and exact parameter values already
 decided. Every field is typed and range-checked; there is no free-text "make it look nice" input.
 
 Do not ask it to: choose what text or image to show, choose when something should appear, choose colors/fonts/
 layout for aesthetic reasons, animate anything beyond a linear `fade` (no slide/move/scale — see
-`unsupported_animations` in the contract), draw an arbitrary shape (no typed delegate for that yet), or accept a
+`unsupported_animations` in the contract), draw a shape (`shape` is not implemented yet), or accept a
 raw ffmpeg filter/command/argv/shell/env — those field names are rejected wherever they appear in the request,
 recursively (`INVALID_REQUEST`). All of that is `video-production-agent`'s job, not this Skill's.
 
@@ -49,6 +49,9 @@ Every failure is `{"ok": false, "error": {"code", "message", "retryable", "detai
 
 - `error.retryable: true` (`TOOL_ERROR`, `CANCELLED`) — safe to retry as-is; the request was fine, the engine or
   environment had a transient problem.
+- `TOOL_ERROR` with `retryable: false` and `details.reason` `ffmpeg_skill_lacks_template` / `ffmpeg_skill_lacks_platform_flag` /
+  `ffmpeg_skill_lacks_platform` — the located ffmpeg-skill is too old for what was asked (a `sticker`/`hook`/`meme` element, or
+  `options.platform`); nothing was rendered. Update ffmpeg-skill or ask for something it can do; `doctor` lists the element types it cannot.
 - Anything else — the request itself needs to change before retrying. In particular:
   - `UNSUPPORTED_OPERATION` on an element `type` or an `animation.kind` — it is not implemented (check
     `unsupported_element_types` / `unsupported_animations` in the contract for why and what to use instead); do

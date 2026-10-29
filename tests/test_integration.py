@@ -17,8 +17,8 @@ from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import Executor
 from motion_graphics.security import PathPolicy
 
-from conftest import (bug_element, chapter_element, countdown_element, image_overlay_element, progress_element, request_doc,
-                      text_overlay_element, title_element, video_overlay_element, run_cli, one_json)
+from conftest import (bug_element, chapter_element, countdown_element, hook_element, image_overlay_element, meme_element, progress_element,
+                      request_doc, sticker_element, text_overlay_element, title_element, video_overlay_element, run_cli, one_json)
 
 
 def _executor(skill_dir, workspace) -> Executor:
@@ -372,6 +372,108 @@ def test_countdown_draws_a_digit_throughout_its_window(skill_dir, workspace, t):
     digit = _luma_diff(out, source, t, "40:60:140:60")
     control = _luma_diff(out, source, t, "40:30:140:145")
     assert digit - control > 15.0, f"countdown did not measurably draw a digit at t={t}s (mean |diff| {digit:.2f}, control {control:.2f})"
+
+
+# ---- sticker / hook / meme: graphics templates newer than the oldest verified ffmpeg-skill (ADR-19). The CI matrix runs
+# both the newest and the oldest verified checkout, so each test asserts what that checkout can actually do -- a render
+# that is measured, or the documented up-front refusal -- instead of skipping on the old one.
+def _skill_info(skill_dir):
+    return FfmpegSkill(Path(skill_dir)).info()
+
+
+def _render_or_refuse(skill_dir, workspace, template, element, output):
+    ex = _executor(skill_dir, workspace)
+    if _skill_info(skill_dir).template_support(template) is False:
+        with pytest.raises(MotionGraphicsError) as e:
+            ex.response(request_doc([element], output=output))
+        assert e.value.code == "TOOL_ERROR" and e.value.details["reason"] == "ffmpeg_skill_lacks_template" and e.value.details["template"] == template
+        assert not (workspace / output).exists()  # refused before anything rendered
+        return None
+    resp = ex.response(request_doc([element], output=output))
+    assert resp["ok"] is True
+    meta = _probe(skill_dir, resp["output"]["path"])
+    assert meta["video"]["width"] == 320 and meta["video"]["height"] == 180
+    return resp
+
+
+# Crop windows below are measured on the 320x180 fixture, as the tests above are: each "drawn" window differs from the
+# source by 40-116 mean |luma| (blend=difference), each control window beside it by under 1.
+def test_sticker_draws_a_chip_in_its_corner_and_nothing_elsewhere(skill_dir, workspace):
+    resp = _render_or_refuse(skill_dir, workspace, "sticker", sticker_element(text="NEW", start=0, end=4), "out/sticker.mp4")
+    if resp is None:
+        return
+    out, source = resp["output"]["path"], str(workspace / "video.mp4")
+    assert _luma_diff(out, source, 2.0, "40:16:240:44") > 25.0, "the sticker chip was not drawn in its top-right corner"
+    assert _luma_diff(out, source, 2.0, "40:16:20:140") < 3.0, "pixels changed away from the sticker"
+
+
+def test_hook_draws_a_title_band_and_a_bar_that_empties_across_the_window(skill_dir, workspace):
+    resp = _render_or_refuse(skill_dir, workspace, "hook", hook_element(title="WATCH THIS", start=0, end=4), "out/hook.mp4")
+    if resp is None:
+        return
+    out, source = resp["output"]["path"], str(workspace / "video.mp4")
+    assert _luma_diff(out, source, 2.0, "100:20:110:78") > 40.0, "the hook's title band was not drawn mid-frame"
+    assert _luma_diff(out, source, 2.0, "100:20:110:140") < 3.0, "pixels changed below the hook's band"
+    # the 3px bar along the top is full-width at the start and slides out to the left over the element's own window: the
+    # x=200..230 strip is covered a quarter of the way in and empty three quarters of the way in
+    assert _luma_diff(out, source, 1.0, "30:3:200:0") > 50.0, "the hook's bar had already emptied a quarter of the way through"
+    assert _luma_diff(out, source, 3.0, "30:3:200:0") < 5.0, "the hook's bar had not emptied three quarters of the way through"
+
+
+def test_hook_card_lasts_the_whole_element_window_not_the_templates_default_three_seconds(skill_dir, workspace):
+    # graphics.py's own --duration defaults to 3s; this skill passes the element's window, so a 5s element keeps the card up at 4.5s
+    resp = _render_or_refuse(skill_dir, workspace, "hook", hook_element(title="WATCH THIS", start=0, end=5), "out/hook5.mp4")
+    if resp is None:
+        return
+    assert _luma_diff(resp["output"]["path"], str(workspace / "video.mp4"), 4.5, "100:20:110:78") > 40.0
+
+
+def test_meme_draws_its_top_and_bottom_lines(skill_dir, workspace):
+    resp = _render_or_refuse(skill_dir, workspace, "meme", meme_element(top="WHEN THE RENDER", bottom="FINISHES", start=0, end=4), "out/meme.mp4")
+    if resp is None:
+        return
+    out, source = resp["output"]["path"], str(workspace / "video.mp4")
+    assert _luma_diff(out, source, 2.0, "120:14:100:47") > 40.0, "the meme's top line was not drawn"
+    assert _luma_diff(out, source, 2.0, "70:14:125:118") > 40.0, "the meme's bottom line was not drawn"
+    assert _luma_diff(out, source, 2.0, "100:14:110:85") < 3.0, "pixels changed between the meme's lines"
+
+
+# ---- document.options.platform: ffmpeg-skill --platform, so an omitted margin becomes the destination's safe zone
+def _platform_response(skill_dir, workspace, elements, output, platform):
+    d = request_doc(elements, output=output)
+    if platform:
+        d["options"] = {"platform": platform}
+    return _executor(skill_dir, workspace).response(d)
+
+
+def test_platform_moves_an_overlay_and_a_graphics_template_into_the_safe_zone(skill_dir, workspace):
+    info = _skill_info(skill_dir)
+    if not (info.takes_platform("overlay") and info.takes_platform("graphics")):
+        with pytest.raises(MotionGraphicsError) as e:
+            _platform_response(skill_dir, workspace, [text_overlay_element(position="top-left", font_size=20, start=0, end=4)], "out/p.mp4", "broadcast")
+        assert e.value.details["reason"] == "ffmpeg_skill_lacks_platform_flag"
+        return
+    source = str(workspace / "video.mp4")
+    # overlay (text at top-left): 24px margin by default; broadcast's 5% safe zone is 16px/9px, so the text sits nearer the corner
+    ov = lambda platform, name: _platform_response(skill_dir, workspace, [text_overlay_element(position="top-left", font_size=20, start=0, end=4)], f"out/{name}.mp4", platform)["output"]["path"]
+    plain, safe = ov(None, "ov_plain"), ov("broadcast", "ov_safe")
+    assert _luma_diff(plain, source, 2.0, "40:14:24:24") > 30.0 and _luma_diff(plain, source, 2.0, "40:10:10:10") < 5.0
+    assert _luma_diff(safe, source, 2.0, "40:14:24:24") < 10.0 and _luma_diff(safe, source, 2.0, "40:10:10:10") > 20.0
+    # graphics template (bug at top-left): the brand's 48px safe margin by default, the broadcast safe zone under platform
+    gx = lambda platform, name: _platform_response(skill_dir, workspace, [bug_element(position="top-left", start=0, end=4)], f"out/{name}.mp4", platform)["output"]["path"]
+    plain, safe = gx(None, "bug_plain"), gx("broadcast", "bug_safe")
+    assert _luma_diff(plain, source, 2.0, "20:14:44:46") > 8.0 and _luma_diff(plain, source, 2.0, "20:14:6:6") < 3.0
+    assert _luma_diff(safe, source, 2.0, "20:14:44:46") < 3.0 and _luma_diff(safe, source, 2.0, "20:14:6:6") > 8.0
+
+
+def test_an_explicit_margin_wins_over_platform(skill_dir, workspace):
+    # 40, not 24: ffmpeg-skill/overlay tells "explicit" from "not given" by comparing --margin with its own default (24), so
+    # an explicit 24 is indistinguishable from none and the safe zone applies to it (documented in ADR-19; not pinned here)
+    if not _skill_info(skill_dir).takes_platform("overlay"):
+        return  # nothing to override on a checkout without --platform (the refusal is covered above)
+    source = str(workspace / "video.mp4")
+    out = _platform_response(skill_dir, workspace, [text_overlay_element(position="top-left", font_size=20, margin=40, start=0, end=4)], "out/ov_explicit.mp4", "broadcast")["output"]["path"]
+    assert _luma_diff(out, source, 2.0, "40:14:40:40") > 30.0 and _luma_diff(out, source, 2.0, "40:10:10:10") < 5.0
 
 
 def test_missing_image_asset_fails(skill_dir, workspace):

@@ -100,13 +100,14 @@ video-production-agent                         motion-graphics-skill
 | `ffmpeg-skill` | The deterministic media-processing engine every skill above delegates actual ffmpeg execution to. |
 
 This skill never talks to ffmpeg/ffprobe directly: every render is a typed, argv-only call into ffmpeg-skill's
-`graphics.py` (title / lower-third templates) or `overlay.py` (text / image / video overlays). See
+`graphics.py` (the title, lower-third, bug, chapter, progress, countdown, sticker, hook and meme templates) or `overlay.py`
+(text / image / video overlays). See
 [`docs/ffmpeg-skill.md`](docs/ffmpeg-skill.md).
 
 ## Graphics model
 
 - **GraphicsDocument**: one input video, one output path, a list of `GraphicsElement`, and render options
-  (`reuse_intermediates`, `crf`, `preset`, `audio_stream`).
+  (`reuse_intermediates`, `crf`, `preset`, `audio_stream`, `platform`).
 - **GraphicsElement**: `id`, `type`, `start`/`end` (seconds, half-open, both finite), type-specific typed
   `parameters`, and an optional `animation`.
 - **Animation**: `{"kind": "fade", "parameters": {"duration": <seconds>}}` — a linear alpha fade in at `start` and
@@ -127,6 +128,9 @@ generated list:
 | `chapter` | `ffmpeg-skill/graphics --template chapter` | fixed 0.3s fade in/out (not configurable) |
 | `progress` | `ffmpeg-skill/graphics --template progress` | none at all -- driven entirely by its own start/end fill, no alpha |
 | `countdown` | `ffmpeg-skill/graphics --template countdown` | fixed, per-digit 0.5s pulse (not configurable) |
+| `sticker` | `ffmpeg-skill/graphics --template sticker` | fixed pop-in (0.25s fade up + rise) and 0.3s fade-out (not configurable) |
+| `hook` | `ffmpeg-skill/graphics --template hook` | none at all -- a bar that empties across the window, no fade |
+| `meme` | `ffmpeg-skill/graphics --template meme` | none at all |
 
 `bug` is a persistent text watermark in one of the four corners (e.g. `"LIVE"` or `"@handle"`) — its `position` is
 a closed vocabulary of just those four corners (`top-left`/`top-right`/`bottom-left`/`bottom-right`), a strict
@@ -148,9 +152,38 @@ across the element's own `start`/`end` window, each with a brief built-in "pulse
 start of its segment) — distinct from `fade` and not configurable. No `title`, no `position` (always centered);
 its only parameter besides `count_from` is `primary_color` (digit color).
 
-`shape` is intentionally **not implemented** in this contract (see `unsupported_element_types` in the contract,
-and STEP 24 of the design brief) — no delegate tool anywhere draws an arbitrary shape without a raw ffmpeg
-filter string, so it is not published as supported by `doctor`/`contract`.
+`sticker` is a filled chip of short text in one of the four corners (`"NEW"`, `"LIVE NOW"`), same closed-vocabulary
+`position` as `bug` (default `top-right`); `primary_color` is the chip, and there is no `text_color` because the template
+draws the text in its fixed dark colour.
+
+`hook` is the short-form opener: a full-width band with a large centered `title` (optional `text_color`/`primary_color`) and a
+thin bar along the top that empties across the element's own `start`/`end` window, so the card stays up for exactly that window.
+
+`meme` draws heavy white upper-case lines with a black outline at the top and bottom margins: `top` and `bottom`, at least
+one of them. Colours and position are fixed by the template.
+
+`sticker`, `hook` and `meme` need an ffmpeg-skill newer than 0.12.5 (they arrived together with `--platform`). `doctor` reports
+them `unsupported` on an older checkout, and a request for one is refused before anything renders (`TOOL_ERROR`,
+`retryable: false`, `details.reason: ffmpeg_skill_lacks_template`) — see `docs/decisions.md` ADR-19.
+
+`shape` is **not implemented** in this contract (see `unsupported_element_types` in the contract) — it is published as
+unsupported by `doctor`/`contract`. It is not blocked on ffmpeg-skill: a rectangle can be composed from its
+`background.py` and `overlay.py --video`, but that is two tool calls for one element, which this skill's stage model does not
+cover yet, so it needs its own design decision first (`docs/decisions.md` ADR-8).
+
+## Platform safe zones
+
+`options.platform` (`broadcast`, `facebook`, `instagram`, `linkedin`, `podcast`, `reels`, `shorts`, `tiktok`, `twitter`,
+`youtube`, `youtube-shorts`) is passed to every `graphics` and `overlay` stage as ffmpeg-skill's `--platform`: each edge's margin
+becomes that destination's safe zone (`broadcast` is 5 % on every edge; a top-left logo clears TikTok's status bar). A graphics
+template follows it directly. An overlay element follows it when the request gives no `margin`; a `margin` you give is sent and wins,
+except that ffmpeg-skill treats an explicit `24` (its own default) as not given. Explicit `{x, y}` positions are unaffected.
+
+```json
+{"options": {"platform": "broadcast"}}
+```
+
+An ffmpeg-skill without `--platform` refuses such a request before anything renders (`ffmpeg_skill_lacks_platform_flag`).
 
 ## Video-on-video / picture-in-picture / chroma-key
 

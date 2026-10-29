@@ -7,11 +7,11 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import FLAG_ALTERNATIVES, FLAGS_USED, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS, TOOLS_USED
+from .adapter import FLAG_ALTERNATIVES, FLAGS_USED, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS, TEMPLATE_FLAGS, TOOLS_USED
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
-from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, POSITION_NAMES,
+from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, PLATFORM_NAMES, POSITION_NAMES,
                     REQUEST_SCHEMA_ID, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES)
 
 CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
@@ -30,12 +30,14 @@ CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
 # different ids once merged. `video_overlay` gets its own id rather than folding into
 # `motion_graphics.overlay`: unlike `text_overlay`/`image_overlay` (which that matrix already
 # treats as one capability), a video-on-video picture-in-picture/chroma-key layer is a materially
-# different capability, not the same "free-form text, image/logo overlay" one (ADR-15).
+# different capability, not the same "free-form text, image/logo overlay" one (ADR-15). `sticker`/`hook`/`meme`
+# (ADR-19) are likewise this repository's own provisional ids, one per template.
 CAPABILITY_IDS: Dict[str, str] = {
     "title": "motion_graphics.title_card", "lower_third": "motion_graphics.lower_third",
     "text_overlay": "motion_graphics.overlay", "image_overlay": "motion_graphics.overlay",
     "bug": "motion_graphics.bug", "chapter": "motion_graphics.chapter", "progress": "motion_graphics.progress",
     "countdown": "motion_graphics.countdown", "video_overlay": "motion_graphics.video_overlay",
+    "sticker": "motion_graphics.sticker", "hook": "motion_graphics.hook", "meme": "motion_graphics.meme",
 }
 
 
@@ -51,11 +53,14 @@ def _param_schema(ps: Dict[str, Any]) -> Dict[str, Any]:
 def element_type_specs() -> List[Dict[str, Any]]:
     out = []
     for etype, spec in ELEMENT_TYPES.items():
-        out.append({
+        entry = {
             "type": etype, "description": spec["description"], "tool": f"ffmpeg-skill/{spec['tool']}",
             "animation": spec["animation"], "parameters": {k: _param_schema(v) for k, v in spec["parameters"].items()},
             "required_capabilities": spec["required_capabilities"], "deterministic": "content_equivalent",
-        })
+        }
+        if spec.get("at_least_one_of"):
+            entry["constraints"] = [{"at_least_one_of": list(spec["at_least_one_of"])}]
+        out.append(entry)
     return out
 
 
@@ -82,7 +87,7 @@ def skill_contract() -> Dict[str, Any]:
                        "provenance out. Not an AI agent: it never chooses what to show, when to show it, or how it should look.",
         "repository": "https://github.com/kajisho5/motion-graphics-skill",
         "not_provided": ["AI reasoning", "design decisions", "production plans", "template or content selection", "arbitrary ffmpeg filters",
-                         "arbitrary shapes without a typed delegate tool", "position/scale animation (see unsupported_animations)",
+                         "shape elements (not implemented yet, see unsupported_element_types)", "position/scale animation (see unsupported_animations)",
                          "video editing (video-editing-skill)", "color grading (color-grading-skill)", "subtitle generation (subtitle-skill)",
                          "shell execution", "network access"],
         "tools": tools,
@@ -91,6 +96,13 @@ def skill_contract() -> Dict[str, Any]:
         "unsupported_element_types": [{"type": t, "status": "not_implemented", "reason": r} for t, r in UNSUPPORTED_ELEMENT_TYPES.items()],
         "animations": animation_specs(),
         "unsupported_animations": [{"kind": k, "status": "not_implemented", "reason": r} for k, r in UNSUPPORTED_ANIMATIONS.items()],
+        "platforms": {"names": list(PLATFORM_NAMES), "request_field": "options.platform",
+                      "applies_to": "every graphics and overlay stage of the document (one destination per document)",
+                      "effect": "an element margin the request does not give explicitly becomes that destination's safe zone (ffmpeg-skill --platform, "
+                                "per edge: e.g. a top-left logo clears TikTok's status bar); a margin the request gives wins -- except that ffmpeg-skill/overlay "
+                                "treats a margin equal to its own default (24) as not given, so the safe zone still applies to an explicit 24; "
+                                "explicit {x,y} positions are unaffected",
+                      "requires": "an ffmpeg-skill checkout whose graphics/overlay tools have --platform; otherwise the request is refused before rendering (TOOL_ERROR)"},
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
         "fonts": {"registry": {fid: spec["family"] for fid, spec in FONT_REGISTRY.items()}, "default_font_id": DEFAULT_FONT_ID,
                   "custom_font_file": {"allowed_extensions": list(ALLOWED_FONT_EXTENSIONS), "path_policy": True, "provenance": "font_file_hash (sha256)"},
@@ -114,12 +126,15 @@ def skill_contract() -> Dict[str, Any]:
                          "tools_used": list(TOOLS_USED), "flags_used": {k: list(v) for k, v in FLAGS_USED.items()},
                          "required_flags": {k: list(v) for k, v in REQUIRED_FLAGS.items()},
                          "flag_alternatives": {t: {g: list(a) for g, a in groups.items()} for t, groups in FLAG_ALTERNATIVES.items()},
-                         "optional_flags": {k: list(v) for k, v in OPTIONAL_FLAGS.items()}},
+                         "optional_flags": {k: list(v) for k, v in OPTIONAL_FLAGS.items()},
+                         # graphics templates newer than the oldest verified checkout (0.12.5): element types built on them are
+                         # reported unsupported by doctor, and refused before rendering, when the checkout lacks the template or flags
+                         "template_requirements": {t: {"graphics_flags": list(f)} for t, f in TEMPLATE_FLAGS.items()}},
         "request": {"schema": REQUEST_SCHEMA_ID, "id_pattern": ID_RE.pattern, "forbidden_fields": sorted(FORBIDDEN_KEYS),
                     "shape": {"schema": REQUEST_SCHEMA_ID, "video": {"path": "file"}, "output": {"path": "file", "overwrite?": False},
                               "elements": [{"id": "id", "type": "|".join(sorted(ELEMENT_TYPES)), "start": 0, "end": 1,
                                             "parameters": {"...": "see element_types[].parameters"}, "animation?": {"kind": "fade", "parameters": {"duration": 0.5}}}],
-                              "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0}}},
+                              "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0, "platform?": "tiktok"}}},
         "response": {"schema": f"{SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION}",
                      "success": {
                          "run": {"ok": True, "status": "ok", "dry_run": False, "output": "{path, sha256, size, duration, width, height}",

@@ -103,19 +103,28 @@ reports success.
 **Why**: STEP 12 explicitly forbids exactly this. A silent substitution would make a passing render silently wrong
 (the wrong typeface, the wrong logo) with no signal to the caller.
 
-## ADR-8: `shape` is not implemented in this contract; the other `graphics.py` templates now all are
+## ADR-8: `shape` is not implemented in this contract; it needs a design decision here, not a new ffmpeg-skill tool
 
 **Decision**: `shape` is declared in `model.UNSUPPORTED_ELEMENT_TYPES` and never appears as `supported` in
 `contract`/`doctor`. (`chapter`, `bug`, `progress`, and `countdown` were in this list too, at various points,
-until ADR-11/ADR-12/ADR-13/ADR-14 implemented them one PR at a time; every template `ffmpeg-skill/graphics`
-exposes is now implemented here.)
+until ADR-11/ADR-12/ADR-13/ADR-14 implemented them one PR at a time. ADR-19 later implemented `sticker`, `hook` and
+`meme`, graphics templates ffmpeg-skill added after this ADR was written, so "every template `ffmpeg-skill/graphics`
+exposes" was true when ADR-14 landed and has to be re-checked against the checkout whenever ffmpeg-skill releases.)
 
-**Why `shape` specifically stays unsupported, unlike the others**: it is not merely "outside this Skill's first
-minimum" the way `bug`/`chapter`/`progress`/`countdown` briefly were -- it has **no typed delegate anywhere
-upstream** at all. Drawing an arbitrary rectangle/shape (position/size/color) is not exposed by any
-`ffmpeg-skill` tool today; implementing it here would mean this Skill building its own raw filter string, which
-STEP 7/STEP 10 forbid outright. Implementing `shape` is blocked on `ffmpeg-skill` gaining a typed shape tool
-first -- out of this repository's boundary to add.
+**Corrected 2026-10-29 -- the original reason was wrong.** This ADR first said `shape` has "no typed delegate anywhere
+upstream" and "is blocked on `ffmpeg-skill` gaining a typed shape tool first". That is not so. `ffmpeg-skill/background.py`
+(0.11.0: a silent, exact-size solid-colour or gradient clip generated from no input) plus `ffmpeg-skill/overlay.py
+--video` (a positioned, scaled, opacity-controlled, time-bounded layer) draw a rectangle with no raw filter
+construction, so ADR-1 holds. Checked on ffmpeg-skill 2.10.8: a 300x40 `background.py` clip composited with
+`overlay.py --video --position 40,300 --opacity 0.85 --start 1 --end 3` gives a semi-transparent rectangle at that
+position in exactly that window. Issue #10 item 1 made the same observation. Not checked: rounded corners, a border,
+rotation -- a rectangle is all that composition is known to give.
+
+**What actually blocks `shape`**: `executor._argv()`, the stage identity (ADR-5/ADR-6) and the per-element `StageResult`
+all assume one delegate call per element, and a rectangle is two (generate the clip, then composite it). Whether it
+becomes two stages for one element, or one stage with a derived intermediate, and how the generated clip is identified
+and cached, is a design decision to make before touching `model.py`/`executor.py`. It is not a missing upstream
+capability, and building a filter string here to avoid the question is still ruled out.
 
 ## ADR-10: `provides` publishes cross-repository Capability ids, with `text_overlay` and `image_overlay` sharing one id
 
@@ -266,9 +275,9 @@ if it played the output back.
 
 Verified end-to-end the same way as ADR-11/ADR-12/ADR-13: `video-production-agent`'s pinned `check_contract()`,
 and the ecosystem registry's `validate_provides_entry()`, both still pass with `countdown` added (see
-`CLAUDE.md`'s reproduction recipe). After this PR, `shape` (ADR-8) is the only element type from the original
-design brief's full list still unimplemented, and it is blocked on `ffmpeg-skill` gaining a capability this
-repository does not have the authority to add itself.
+`CLAUDE.md`'s reproduction recipe). After this PR, `shape` (ADR-8) was the only element type from the original
+design brief's full list still unimplemented (ADR-8 was later corrected: that is a design question here, not an
+upstream gap).
 
 ## ADR-15: `video_overlay` is implemented; its animation is `"none"`, not `"configurable"`, and it gets its own Capability id
 
@@ -411,4 +420,68 @@ rename, the `--overwrite` requirement and the stricter colour validation, all ha
 nothing about which flags exist; the contract does. CI runs the suite against ffmpeg-skill `main` on every push and
 daily, and against the oldest verified commit (0.12.5), so both ends of the detected range stay exercised.
 `tests/test_compat.py` pins the detection against fake 0.x, 1.10-1.x, 2.x, future and contract-less checkouts.
+
+## ADR-19: `sticker`, `hook`, `meme` and `document.options.platform`; templates and flags newer than 0.12.5 are detected, not assumed
+
+**Decision**: three more `ffmpeg-skill/graphics` templates become element types, and one new document option is added.
+
+- **`sticker`** (`--template sticker`): `text` (required), `position` (the same four-corner closed vocabulary as `bug`/`chapter`,
+  default `top-right`) and `primary_color` (the chip). No `text_color`: graphics.py draws the chip's text in the brand
+  background colour and never reads `--text-color` for this template (the ADR-12 reasoning for `chapter`). Animation
+  `"builtin_pop"`: the chip fades up while rising 0.25 s, and fades out over the last 0.3 s.
+- **`hook`** (`--template hook`): `title` (required), `text_color`, `primary_color`. A full-width band with the title, and a
+  thin bar along the top that empties across the card's window. The template has its own `--duration` (how long the card
+  stays up from `--start`, default 3 s); this skill sends `end - start`, the one length it knows, so the card and its bar
+  span exactly the element's window and a 5 s element is not silently cut to 3 s. Animation `"none"`, as `progress` (ADR-13): the
+  bar is driven by the timeline, and the band and title never fade.
+- **`meme`** (`--template meme`): `top` and `bottom`, **at least one** required. That cross-field rule is a new
+  `at_least_one_of` entry in `ELEMENT_TYPES`, enforced in `_element()` and published in the contract as `constraints`.
+  Colours, size and position are fixed by the template, so none are exposed. Animation `"none"`.
+- **`document.options.platform`**: one of `PLATFORM_NAMES` (`broadcast`, `facebook`, `instagram`, `linkedin`, `podcast`,
+  `reels`, `shorts`, `tiktok`, `twitter`, `youtube`, `youtube-shorts`), sent as `--platform` to every `graphics` and `overlay`
+  stage. ffmpeg-skill then takes each edge's margin from that destination's safe zone (`broadcast` is 5 % on every edge;
+  a top-left logo clears TikTok's status bar). One value per document, like `audio_stream`: there is one output, so one
+  destination. Aliases (`fb`, `ig`, `x`, `yt`, `yt-shorts`) are not accepted, so a destination has one spelling, and nor is
+  `custom` ("no safe zone"), which is the same as leaving the option out. Included in the stage identity.
+
+**Margins under `platform`**: ffmpeg-skill applies the safe zone only when no margin is given. `graphics` templates never
+receive a `--margin` from this skill, so they follow the platform directly. The overlay element types had a materialised
+default (`margin: 24`) that was always sent, which would have made the option do nothing for them; so under
+`options.platform` an omitted `margin` is left absent (`"platform_replaces_default"` in the parameter table) and no
+`--margin` is sent, while a `margin` the request gives is sent. Without `options.platform` nothing changes: the default is still
+materialised, so existing documents keep their parameters and identities. Observed on ffmpeg-skill 2.10.8: `overlay.py` tells
+"given" from "not given" by comparing `--margin` with its own default (24), so an explicit `margin: 24` still gets the safe
+zone. That is upstream behaviour and is stated in the contract (`platforms.effect`) rather than hidden or pinned by a test.
+
+**These need ffmpeg-skill newer than 0.12.5** (they arrived together in ffmpeg-skill's delivery-templates change, #224), and 0.12.5 is the
+oldest checkout this skill is verified against, so they are *detected*, as ADR-18 does for `--quality` and `--overwrite`:
+
+- `adapter.TEMPLATE_FLAGS` names the extra flags each template needs (`text`; `duration`; `top`+`bottom`).
+  `check_tools()` records `template_support[name]`: `True` when the name is in the checkout's `--template` choices and its flags
+  exist, `False` when either is missing, `None` when the choices cannot be read. The choices come from the contract's `enum`, or
+  from `--help` (`flags_from_help` now reads `--template {a,b}` and `--platform {a,b}`).
+- `--platform` is an `OPTIONAL_FLAGS` entry; `check_tools()` records `platform_flag` and `platforms` per tool.
+- None of this is a compatibility *problem*: an old checkout stays usable for every other element type, so `info.supported` is unchanged.
+- Each new element type lists a `graphics-template:<name>` required capability, which `doctor` derives from `template_support`, so on an
+  old checkout `doctor` reports `sticker`/`hook`/`meme` `unsupported` and the overall status `degraded`.
+- `Executor._check_checkout()` runs for `run`, `plan` and `run --dry-run`, before anything renders. A request for an element type whose
+  template is `False`, or for `options.platform` when the checkout has no `--platform` flag (or not that destination), is a `TOOL_ERROR`
+  with `retryable: false` and `details.reason` `ffmpeg_skill_lacks_template` / `ffmpeg_skill_lacks_platform_flag` /
+  `ffmpeg_skill_lacks_platform`. A template whose support is `None` is attempted, not refused. Refusing up front matters because
+  the alternative is a stage failing inside ffmpeg-skill after earlier stages already rendered, with an argparse message.
+
+**Capability ids**: `motion_graphics.{sticker,hook,meme}`, this repository's own provisional choices like ADR-11..15's, to reconcile
+if the OS registry assigns others.
+
+**Verification**:
+
+- `tests/test_templates_platform.py` (request validation, argv, detection against synthetic contracts/`--help`, the up-front
+  refusal with a fake checkout that records every call, doctor and contract) and real-media tests in `tests/test_integration.py`:
+  crop windows measured on the fixture, drawn windows 40-116 mean |luma| from the source and control windows under 1. They assert what
+  the checkout under test can do, so the 0.12.5 CI job checks the refusal instead of skipping.
+- Full suite 397 passed against ffmpeg-skill 2.10.8 and against 0.12.5 (`87c84f2`); on 0.12.5 `doctor` reports `hook`, `meme`, `sticker`
+  unsupported and `degraded`.
+- `video-production-agent`'s pinned `check_contract()`: `[]`. `contract_drift()` gains exactly `element_types hook/meme/sticker: installed
+  but not pinned`, additive. (Its `RealSkillTests::test_real` asserts zero drift and already failed on unmodified `main` for three older
+  drift entries, `tools`, `ffmpeg_skill` and `request`; this change does not add a failure.)
 

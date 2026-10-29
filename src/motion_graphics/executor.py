@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import FfmpegSkill, fmt_number, fmt_seconds
+from .adapter import TEMPLATE_FLAGS, FfmpegSkill, fmt_number, fmt_seconds
 from .canonical import sha256_file, stable_hash
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
@@ -95,6 +95,8 @@ class Executor:
         if output_path.exists() and not doc.overwrite:
             raise MotionGraphicsError("OUTPUT_ERROR", f"output already exists (set document.output.overwrite to replace it): {output_path}", {"reason": "exists", "path": str(output_path)})
 
+        self._check_checkout(doc)
+
         source_meta = self.skill.probe(str(video_path), self.timeout)
         video = source_meta.get("video") or {}
         if not video:
@@ -159,14 +161,14 @@ class Executor:
         prev_duration = duration
         results: List[StageResult] = []
         any_reused = False
-        crf, preset, audio_stream = doc.options["crf"], doc.options["preset"], doc.options["audio_stream"]
+        crf, preset, audio_stream, platform = doc.options["crf"], doc.options["preset"], doc.options["audio_stream"], doc.options["platform"]
 
         for i, el in enumerate(ordered):
             is_last = i == len(ordered) - 1
             identity_input = self._identity_parameters(el, resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id))
             identity = stable_hash({"skill_version": VERSION, "tool_versions": self.tool_versions, "index": i, "previous": prev_identity,
                                      "type": el.type, "start": el.start, "end": el.end, "animation": el.animation.to_dict() if el.animation else None,
-                                     "parameters": identity_input, "crf": crf, "preset": preset, "audio_stream": audio_stream})
+                                     "parameters": identity_input, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform})
             if is_last:
                 target = output_path
                 manifest_path: Optional[Path] = None
@@ -190,7 +192,7 @@ class Executor:
             for stale in (target, manifest_path) if manifest_path else (target,):
                 if stale and stale.exists() and stale != output_path:
                     stale.unlink()
-            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset, audio_stream)
+            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset, audio_stream, platform)
             try:
                 run = self.skill.run_tool(tool, argv, self.timeout, tool_cwd)
                 artifact_meta = self._validate_stage_output(target, el, width, height, prev_duration)
@@ -234,6 +236,36 @@ class Executor:
             "warnings": warnings,
         }
 
+    def _check_checkout(self, doc: Any) -> None:
+        """Refuse, before anything renders, a request the located ffmpeg-skill cannot carry out: an element type built on a
+        graphics template the checkout lacks (sticker/hook/meme need ffmpeg-skill releases newer than 0.12.5), or a
+        document.options.platform it has no --platform flag (or no such destination) for. These are facts about the
+        checkout, detected from its own contract/--help (adapter.check_tools), never guessed from a version number --
+        and never left to fail inside the tool after earlier stages already rendered (ADR-19)."""
+        if self.skill is None:
+            return
+        info = self.skill.info()
+        for el in doc.ordered_elements():
+            template = ELEMENT_TYPES[el.type].get("template")
+            if template in TEMPLATE_FLAGS and info.template_support(template) is False:
+                raise MotionGraphicsError("TOOL_ERROR", f"elements[{el.element_id}]: the {el.type!r} element type needs ffmpeg-skill's graphics template {template!r}, "
+                                          f"which the ffmpeg-skill at {info.directory} (version {info.version}) does not have",
+                                          {"reason": "ffmpeg_skill_lacks_template", "element_id": el.element_id, "type": el.type, "template": template,
+                                           "ffmpeg_skill_version": info.version}, retryable=False)
+        platform = doc.options.get("platform")
+        if platform is None:
+            return
+        for tool in sorted({ELEMENT_TYPES[el.type]["tool"] for el in doc.elements}):
+            if not info.takes_platform(tool):
+                raise MotionGraphicsError("TOOL_ERROR", f"document.options.platform is set, but the ffmpeg-skill at {info.directory} (version {info.version}) has no "
+                                          f"--platform flag on its {tool} tool", {"reason": "ffmpeg_skill_lacks_platform_flag", "tool": f"ffmpeg-skill/{tool}",
+                                                                                   "ffmpeg_skill_version": info.version}, retryable=False)
+            known = info.platform_names(tool)
+            if known is not None and platform not in known:
+                raise MotionGraphicsError("TOOL_ERROR", f"document.options.platform {platform!r} is not a destination the ffmpeg-skill at {info.directory} "
+                                          f"(version {info.version}) knows on its {tool} tool: {known}",
+                                          {"reason": "ffmpeg_skill_lacks_platform", "tool": f"ffmpeg-skill/{tool}", "platform": platform, "known": known}, retryable=False)
+
     # ---- planning (no filesystem writes beyond none; probe is read-only)
     def _plan_entry(self, index: int, el: GraphicsElement, assets: Dict[str, Dict[str, Any]], fonts_: Dict[str, ResolvedFont]) -> Dict[str, Any]:
         d = el.to_dict()
@@ -272,7 +304,8 @@ class Executor:
     # ---- argv construction: every value is a validated number, a closed-vocabulary string, or a resolved path.
     # Returns (tool, argv, cwd): cwd is None except for a custom font_file (see the comment below).
     def _argv(self, el: GraphicsElement, stage_input: str, stage_output: str, asset: Optional[Dict[str, Any]],
-              font: Optional[ResolvedFont], crf: int, preset: str, audio_stream: Optional[int] = None) -> Tuple[str, List[str], Optional[str]]:
+              font: Optional[ResolvedFont], crf: int, preset: str, audio_stream: Optional[int] = None,
+              platform: Optional[str] = None) -> Tuple[str, List[str], Optional[str]]:
         p = el.parameters
         spec = ELEMENT_TYPES[el.type]
         if spec["tool"] == "graphics":
@@ -280,6 +313,8 @@ class Executor:
                     "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), *self._encode_flags("graphics", crf, preset)]
             if audio_stream is not None:
                 argv += ["--audio-stream", str(audio_stream)]
+            if platform is not None:
+                argv += ["--platform", platform]
             if el.type == "title":
                 argv += ["--title", p["title"]]
                 if p.get("subtitle"):
@@ -295,6 +330,16 @@ class Executor:
                 argv += ["--title", p["title"], "--position", p["position"]]
             elif el.type == "countdown":
                 argv += ["--from", str(p["count_from"])]
+            elif el.type == "sticker":
+                argv += ["--text", p["text"], "--position", p["position"]]
+            elif el.type == "hook":
+                # the template's own --duration is how long the card stays up from --start (default 3s); the element's
+                # window is the one length this skill knows, so the card and its emptying bar span exactly that window
+                argv += ["--title", p["title"], "--duration", fmt_seconds(el.end - el.start)]
+            elif el.type == "meme":
+                for flag, key in (("--top", "top"), ("--bottom", "bottom")):
+                    if p.get(key):
+                        argv += [flag, p[key]]
             # else: progress -- no --title/--position/--from at all (see model.ELEMENT_TYPES); only the trailing
             # primary_color passthrough below applies to it
             if p.get("text_color"):
@@ -303,11 +348,15 @@ class Executor:
                 argv += ["--primary", p["primary_color"]]
             return "graphics", argv, None
 
-        argv = [stage_input, "-o", stage_output, "--position", p["position"], "--margin", str(p["margin"]),
-                "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--opacity", fmt_number(p["opacity"]),
-                *self._encode_flags("overlay", crf, preset)]
+        argv = [stage_input, "-o", stage_output, "--position", p["position"]]
+        if "margin" in p:  # absent only under document.options.platform with no explicit margin: the safe zone applies
+            argv += ["--margin", str(p["margin"])]
+        argv += ["--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--opacity", fmt_number(p["opacity"]),
+                 *self._encode_flags("overlay", crf, preset)]
         if audio_stream is not None:
             argv += ["--audio-stream", str(audio_stream)]
+        if platform is not None:
+            argv += ["--platform", platform]
         if el.animation is not None and el.animation.kind == "fade":
             argv += ["--fade", fmt_number(el.animation.parameters["duration"])]
         cwd: Optional[str] = None

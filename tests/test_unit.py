@@ -581,8 +581,17 @@ def test_check_filename_accepts_safe_names(name):
 from motion_graphics.doctor import animation_status, capability_status, element_type_status  # noqa: E402
 
 
+class _InfoStub:
+    """A checkout that can render every graphics template: the capability tests below are about ffmpeg/filter statuses."""
+    supported = True
+
+    @staticmethod
+    def template_support(template):
+        return True
+
+
 def test_capability_reliably_absent_filter_is_unsupported_not_unknown():
-    skill_info = type("Info", (), {"supported": True})()
+    skill_info = _InfoStub()
     # ffmpeg-skill reliably detected filters (several are present) AND positively lists filter:drawtext in
     # "missing" -- it actually checked for this one and confirmed it absent, not merely undetected.
     ffdoc = {"ffmpeg": "6.0.0", "ffprobe": "6.0.0", "available": ["filter:overlay", "filter:scale", "encoder:libx264", "encoder:aac"],
@@ -592,7 +601,7 @@ def test_capability_reliably_absent_filter_is_unsupported_not_unknown():
 
 
 def test_capability_unreliable_filter_detection_is_unknown():
-    skill_info = type("Info", (), {"supported": True})()
+    skill_info = _InfoStub()
     # No filter: entries at all in "available" -> ffmpeg-skill's filter detection itself is unreliable here
     # (e.g. FFmpeg 8+ output format it cannot parse), so an undetected filter is "unknown", not "unsupported",
     # even if (mistakenly, given the unreliable detection) it were also listed in "missing".
@@ -602,7 +611,7 @@ def test_capability_unreliable_filter_detection_is_unknown():
 
 
 def test_capability_missing_encoder_is_unsupported():
-    skill_info = type("Info", (), {"supported": True})()
+    skill_info = _InfoStub()
     ffdoc = {"ffmpeg": "6.0.0", "ffprobe": "6.0.0", "available": ["filter:drawtext"], "missing": ["encoder:aac"], "unknown": []}
     caps = capability_status(skill_info, ffdoc)
     assert caps["encoder:aac"] == "unsupported"
@@ -614,7 +623,7 @@ def test_capability_not_tracked_by_ffmpeg_skill_at_all_is_unknown_not_unsupporte
     # mentions them in available/missing/unknown at all -- absence-from-available alone must never be read as
     # "confirmed unsupported" (it previously was, incorrectly, until this was caught by manually inspecting a
     # real doctor run against a real ffmpeg-skill checkout).
-    skill_info = type("Info", (), {"supported": True})()
+    skill_info = _InfoStub()
     ffdoc = {"ffmpeg": "6.1.1", "ffprobe": "6.1.1", "available": ["filter:drawtext", "filter:loudnorm", "encoder:libx264", "encoder:aac"], "missing": [], "unknown": []}
     caps = capability_status(skill_info, ffdoc)
     assert caps["filter:overlay"] == "unknown"
@@ -630,7 +639,7 @@ def test_capability_chromakey_is_tracked_unlike_overlay_scale_colorchannelmixer(
     # capability list -- see the regression above), ffmpeg-skill/overlay's own contract DOES declare
     # filter:chromakey as an optional capability ("when": "--chromakey"), so ffmpeg-skill's own doctor actually
     # probes for it -- it must read "supported"/"unsupported" from real detection, not fall back to "unknown".
-    skill_info = type("Info", (), {"supported": True})()
+    skill_info = _InfoStub()
     ffdoc_present = {"ffmpeg": "6.1.1", "ffprobe": "6.1.1", "available": ["filter:drawtext", "filter:chromakey", "encoder:libx264", "encoder:aac"], "missing": [], "unknown": []}
     assert capability_status(skill_info, ffdoc_present)["filter:chromakey"] == "supported"
     ffdoc_absent = {"ffmpeg": "6.1.1", "ffprobe": "6.1.1", "available": ["filter:drawtext", "encoder:libx264", "encoder:aac"], "missing": [], "missing_optional": ["filter:chromakey"], "unknown": []}

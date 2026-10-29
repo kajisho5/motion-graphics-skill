@@ -90,6 +90,18 @@ def countdown_element(element_id="cd1", start=0.0, end=3.0, **extra):
     return {"id": element_id, "type": "countdown", "start": start, "end": end, "parameters": {**extra}}
 
 
+def sticker_element(element_id="stk1", start=0.0, end=3.0, text="NEW", **extra):
+    return {"id": element_id, "type": "sticker", "start": start, "end": end, "parameters": {"text": text, **extra}}
+
+
+def hook_element(element_id="hook1", start=0.0, end=3.0, title="WATCH THIS", **extra):
+    return {"id": element_id, "type": "hook", "start": start, "end": end, "parameters": {"title": title, **extra}}
+
+
+def meme_element(element_id="meme1", start=0.0, end=3.0, **extra):
+    return {"id": element_id, "type": "meme", "start": start, "end": end, "parameters": {**extra}}
+
+
 def run_cli(args, stdin_text=None, cwd=None):
     """Run the CLI in a subprocess (the real process boundary) and return (exit, stdout, stderr)."""
     import subprocess
