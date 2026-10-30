@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1 — 2026-10-30
+
+- Add ECOSYSTEM_ROADMAP.md: gaps, wiring and PR-sized steps from the 2026-10-30 ecosystem audit (#27) (94983f4)
+
 ## v0.2.0 — 2026-10-29
 
 - Implement sticker, hook and meme elements and options.platform; correct the shape and template claims (#26) (b927791)
