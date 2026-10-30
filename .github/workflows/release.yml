@@ -48,7 +48,7 @@ jobs:
         id: drafter
         # v7's dry-run resolves without writing a draft. v6 with disable-releaser skipped the drafting
         # that sets tag_name, so every release after the first would have failed on an empty DRAFTED_TAG.
-        uses: release-drafter/release-drafter@v7
+        uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
         with:
           dry-run: true
           commitish: main
@@ -121,6 +121,6 @@ jobs:
         # Skip publish (but keep the tag/GitHub Release above) when no token is configured, rather than failing
         # the whole release. Add a PYPI_API_TOKEN repository secret to enable this step.
         if: steps.pypi_token.outputs.present == 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
