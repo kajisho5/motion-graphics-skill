@@ -9,6 +9,9 @@ on:
     # Mondays 04:23 UTC -- an off-the-hour time, not a coordinated pattern that spikes GitHub's schedulers.
     - cron: '23 4 * * 1'
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

@@ -10,6 +10,9 @@ on:
   schedule:
     - cron: "17 6 * * *"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: ${{ matrix.os }} / py${{ matrix.python }} / ffmpeg-skill ${{ matrix.ffmpeg_skill_label }}
