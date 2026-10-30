@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4 — 2026-10-30
+
+- fix: convert template colour names to RRGGBB, refuse @alpha on them, say so in the contract (ADR-20) (#30) (d2c2fc5)
+
 ## v0.2.3 — 2026-10-30
 
 - fix: distinct provides ids, contract_version and ffmpeg-skill dependency in the contract (#29) (4438320)
