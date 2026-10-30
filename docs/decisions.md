@@ -487,3 +487,67 @@ if the OS registry assigns others.
   but not pinned`, additive. (Its `RealSkillTests::test_real` asserts zero drift and already failed on unmodified `main` for three older
   drift entries, `tools`, `ffmpeg_skill` and `request`; this change does not add a failure.)
 
+
+## ADR-20: template colours are converted to RRGGBB before ffmpeg-skill, `@alpha` on them is refused, and the contract says so per parameter
+
+**Problem** (found by video-production-agent's ADR-064, measured on the real Skills): every colour parameter was typed `color`
+(model `COLOR_RE`: a name or bare `RRGGBB`, optionally `@alpha`), and this skill passed it unchanged. That is true of the overlay
+element types: `ffmpeg-skill/overlay` hands its colour flags to ffmpeg's own parser (names, `0xRRGGBB`, `@alpha`). It was false for
+every template element (`title`, `lower_third`, `bug`, `chapter`, `progress`, `countdown`, `sticker`, `hook`; `meme` has no colour
+parameter): `ffmpeg-skill/graphics` reads `--primary`/`--text-color` through `_common` `color_hex`, which strips `#`/`0x` and
+requires exactly six characters ("colour must be RRGGBB"), then builds `0x<value>@<template alpha>` itself. Read in ffmpeg-skill 2.21.0
+(`scripts/_common/color.py`) and in 0.12.5 (`scripts/_common.py`), identical. So `primary_color: "navy"` or `"red@0.5"` validated here
+and failed inside the render (`TOOL_ERROR`, after earlier stages had already rendered), and a six-letter name (`orange`) got past
+`color_hex` only to fail in ffmpeg as `0xORANGE`. `graphics.py` has no opacity flag for these colours (its alphas are fixed per
+template: the chapter chip 0.9, the sticker plate 0.95, ...).
+
+**Decision**:
+
+- **Names are converted, before ffmpeg-skill sees them** (`colors.template_color`, called by `executor._argv` for `--primary` and
+  `--text-color`). The table (`colors.NAMED_COLORS`) is FFmpeg's own colour-name table (libavutil `parseutils.c`, the 140 CSS/X11
+  names `ffmpeg -colors` prints), lower-case keys, matched case-insensitively as ffmpeg matches them. It is FFmpeg's table and not a
+  smaller one of our own so that a name means the same `RRGGBB` on a template element (converted here) as on an overlay element (where
+  ffmpeg resolves it): `navy` is `000080` everywhere. It is fixed in the source, not read from the installed ffmpeg at run time, so the
+  same request always produces the same argv; `tests/test_colors.py` checks it against the installed ffmpeg instead. A hex value is sent
+  as given (unchanged argv for every request that already worked). The request's own value stays in the stage's `parameters` and in its
+  identity: the conversion is a fixed function of it.
+- **`@alpha` on a template colour is refused, never sent and never dropped.** There is no opacity parameter on the template to map it
+  to, sending it fails inside the render, and stripping it would render an opaque colour the caller did not ask for. `model._color`
+  refuses it at validation (so `validate`, `plan` and `run` all refuse before anything renders) as `UNSUPPORTED_OPERATION`, with
+  `details` `{field, element_id, element_type, value, reason: "color_alpha_not_supported"}` and the element id in the message.
+- **The contract tells the truth per parameter.** Each template colour parameter's schema gains `"alpha": false` and a `description`
+  (`model._template_color()`; `contract._param_schema` now publishes `alpha`). Overlay colour parameters are unchanged and have no
+  `alpha` key: they take `@alpha`. A new top-level `colors` object publishes the table (`named`), the accepted forms, the rule "`@alpha`
+  unless the schema says `alpha: false`", and what each delegate takes. The type stays `color`: a new parameter type would break
+  video-production-agent's `check_contract()` outright (its fixed `PARAMETER_TYPES`, ADR-11).
+- **A name not in the table is refused for every element type** (`INVALID_REQUEST`, `details.reason: "unknown_color_name"`), overlay
+  elements included. On an overlay it used to reach ffmpeg and fail there (`notacolour`), or, for `random` (and `bikeshed`), which ffmpeg
+  does accept, render a different colour on every run in a skill that claims deterministic output. No name that rendered before is
+  refused now except those two.
+
+**Not a contract-version change.** `contract_version` stays `1` and no field is removed, renamed or retyped: `alpha` and `description`
+are new keys in existing parameter schemas, `colors` is a new top-level key. What the contract accepted but could never render (a name
+or `@alpha` on a template colour) now renders (names) or is refused up front with the reason (`@alpha`), instead of failing mid-render.
+
+**Downstream (video-production-agent)**: `check_contract()` stays `[]`. But its drift gate compares each pinned element type's
+`parameters` exactly, and that comparison is in its fatal subset (`contract_breaking_drift`, `DRIFT_ELEMENT_KEYS` includes `parameters`),
+so the eight template element types each report `element_types <type>.parameters` drift and the agent's resolver marks motion-graphics
+`MISSING` until it re-pins its contract snapshot (`contract_0.2.3.json` today). The new top-level `colors` key is not in its
+`DRIFT_KEYS` and is not reported. After re-pinning, the agent can drop its own narrowing to bare `RRGGBB` for template elements
+(`finishing.py` `MOTION_TEMPLATE_COLOR_RE`, ADR-064): accept a name from `colors.named` there too, and refuse `@alpha` wherever a
+parameter's schema says `alpha: false` rather than by engine tool name. That is the agent's change to make, in its repository.
+
+**Verification**:
+
+- Written first and failing on `main` (10 of the 11 new integration tests: `colour must be RRGGBB, got 'red'`, and `0xORANGE` for the
+  chapter): `tests/test_integration.py::test_template_colour_names_render_as_their_rrggbb` renders each of the eight element types twice,
+  with colour names and with the `RRGGBB` they stand for, and requires the two outputs to match (mean |luma| difference under 0.5 over
+  the whole frame at three times) and the frame to differ from the source; `test_a_template_colour_name_actually_changes_the_colour`
+  (a `yellow` and a `blue` progress bar differ by over 50); `test_template_colour_alpha_is_refused_before_anything_renders` (the error
+  names the element, no output directory is created). The overlay case (`Yellow`, `navy@0.5`) already passed and still does.
+- `tests/test_colors.py` (64): the table equals the installed `ffmpeg -colors`; every template colour parameter sends a name as its
+  `RRGGBB` and hex unchanged; `@alpha` refused on all 11 template colour parameters with the exact `details`; overlay colours still take
+  names and `@alpha`, unchanged in argv; unknown names refused; the CLI's `validate` returns the structured error; the contract's
+  per-parameter `alpha: false` and its `colors` table.
+- Full suite 473 passed against ffmpeg-skill 2.21.0 (`main`) and against 0.12.5 (`87c84f2`, where `sticker`/`hook` take the documented
+  refusal path).

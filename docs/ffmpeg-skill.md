@@ -31,6 +31,9 @@ what this skill emits:
   reject it); the consent is this skill's own `document.output.overwrite` check;
 - a bare `RRGGBB` colour on `overlay` is passed as `0xRRGGBB` (2.x validates colour flags; every version reads it the
   same way);
+- `graphics` reads `--primary`/`--text-color` through `color_hex`, which takes `RRGGBB` only (no name, no `@alpha`, no
+  opacity flag) on every version from 0.12.5 to 2.21.0: a colour name is sent as its `RRGGBB` from the fixed table in
+  `colors.py` (FFmpeg's own names), and `@alpha` on a template colour is refused before rendering (ADR-20);
 - `--platform` is passed only when `document.options.platform` is set, and the request is refused up front when the checkout has
   no such flag on a tool it needs, or does not know that destination (the choices are read from the contract's `enum`, else `--help`);
 - the `sticker`, `hook` and `meme` templates (`adapter.TEMPLATE_FLAGS`) are used only when the checkout's `--template` choices and

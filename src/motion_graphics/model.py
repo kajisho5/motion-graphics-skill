@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
 from . import REQUEST_SCHEMA_VERSION, SKILL_ID
+from .colors import NAMED_COLORS, is_hex, split_alpha
 from .errors import MotionGraphicsError
 
 REQUEST_SCHEMA_ID = f"{SKILL_ID}/request@{REQUEST_SCHEMA_VERSION}"
@@ -51,6 +52,16 @@ _STR, _INT, _NUM, _BOOL, _POS, _FONT, _COLOR, _ANIM, _PATH = (
     "string", "integer", "number", "boolean", "position", "font", "color", "animation", "path",
 )
 
+def _template_color() -> Dict[str, Any]:
+    """A colour parameter of a graphics-template element. ffmpeg-skill/graphics takes --primary / --text-color as opaque
+    RRGGBB only and has no opacity flag for them, so the schema says `alpha: false` and a name is converted to its RRGGBB
+    before the call (colors.py, docs/decisions.md ADR-20). The overlay element types' colours have no `alpha` key: they
+    take @alpha (contract `colors.alpha`)."""
+    return {"type": _COLOR, "required": False, "alpha": False,
+            "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); "
+                           "no @alpha: the template draws this colour opaque and has no opacity for it"}
+
+
 # ---- element type table: the only types this skill will ever render. Adding a type here without a working
 # renderer in executor.py is exactly the mistake STEP 9 forbids -- contract.py and doctor.py both derive from
 # this table, never hand-list types, so "supported" always matches what render actually does.
@@ -62,8 +73,8 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "parameters": {
             "title": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
             "subtitle": {"type": _STR, "required": False, "max_length": MAX_TITLE_LENGTH},
-            "text_color": {"type": _COLOR, "required": False},
-            "primary_color": {"type": _COLOR, "required": False},
+            "text_color": _template_color(),
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "filter:drawbox", "encoder:libx264"],
     },
@@ -74,8 +85,8 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "parameters": {
             "name": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
             "title": {"type": _STR, "required": False, "max_length": MAX_TITLE_LENGTH},
-            "text_color": {"type": _COLOR, "required": False},
-            "primary_color": {"type": _COLOR, "required": False},
+            "text_color": _template_color(),
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "filter:overlay", "filter:color", "encoder:libx264"],
     },
@@ -151,7 +162,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
             # `text_overlay`/`image_overlay` use, so it is expressed as `enum` on `string` (already a
             # generically-handled shape) rather than inventing a new parameter type.
             "position": {"type": _STR, "required": False, "default": "top-right", "enum": CORNER_POSITION_NAMES},
-            "text_color": {"type": _COLOR, "required": False},
+            "text_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
     },
@@ -168,7 +179,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
             # and `--primary`/brand primary for the box -- `--text-color` has no effect on this template at all
             # (see graphics.py: `txt_color = bg if template == "chapter" else text_c`), so exposing it here would
             # be a parameter that silently does nothing.
-            "primary_color": {"type": _COLOR, "required": False},
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
     },
@@ -183,7 +194,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
             # graphics.py's progress branch never reads --title/--text-color/--position at all; its only
             # CLI-overridable value is the fill bar's color (brand primary, via --primary). The track behind it
             # is always the fixed brand background color, not overridable by any flag this Skill could pass.
-            "primary_color": {"type": _COLOR, "required": False},
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:color", "filter:drawbox", "filter:overlay", "encoder:libx264"],
     },
@@ -204,7 +215,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
             # MAX_ELEMENTS bounds the request as a whole, so a request cannot make this Skill build an
             # unreasonably long chain of per-digit drawtext filters.
             "count_from": {"type": _INT, "required": False, "default": 5, "min": 1, "max": 60},
-            "primary_color": {"type": _COLOR, "required": False},
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264"],
     },
@@ -222,7 +233,7 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "parameters": {
             "text": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
             "position": {"type": _STR, "required": False, "default": "top-right", "enum": CORNER_POSITION_NAMES},
-            "primary_color": {"type": _COLOR, "required": False},
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264", "graphics-template:sticker"],
     },
@@ -237,8 +248,8 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "animation": "none",
         "parameters": {
             "title": {"type": _STR, "required": True, "max_length": MAX_TITLE_LENGTH},
-            "text_color": {"type": _COLOR, "required": False},
-            "primary_color": {"type": _COLOR, "required": False},
+            "text_color": _template_color(),
+            "primary_color": _template_color(),
         },
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "filter:drawbox", "filter:overlay", "filter:color", "encoder:libx264", "graphics-template:hook"],
     },
@@ -385,10 +396,22 @@ def _string(value: Any, where: str, max_length: Optional[int] = None, allow_empt
     return value
 
 
-def _color(value: Any, where: str) -> str:
+def _color(value: Any, where: str, alpha: bool = True, element: Optional[Tuple[str, str]] = None) -> str:
+    """A colour: a name from colors.NAMED_COLORS (any case) or bare RRGGBB, with @alpha only where the parameter's schema
+    allows it (`alpha: false` marks the graphics-template colours, which ffmpeg-skill draws opaque; ADR-20). `element`
+    is (element_id, element_type), named in the refusal so a caller can tell which element to fix."""
     text = _string(value, where, max_length=40)
     if not COLOR_RE.match(text):
         raise MotionGraphicsError("INVALID_REQUEST", f"{where} must be a named color or RRGGBB hex, optionally with @alpha: {value!r}", {"field": where})
+    base, alpha_part = split_alpha(text)
+    if not is_hex(base) and base.lower() not in NAMED_COLORS:
+        raise MotionGraphicsError("INVALID_REQUEST", f"{where}: {base!r} is not a colour name this skill knows (the contract's colors.named table, "
+                                   f"FFmpeg's own colour names) -- give RRGGBB hex instead", {"field": where, "reason": "unknown_color_name"})
+    if alpha_part is not None and not alpha:
+        element_id, element_type = element or ("", "")
+        raise MotionGraphicsError("UNSUPPORTED_OPERATION", f"{where}: element {element_id!r} ({element_type}) draws this colour opaque through "
+                                   f"ffmpeg-skill/graphics, which has no opacity for it -- remove the @{alpha_part} (give RRGGBB or a colour name)",
+                                   {"field": where, "element_id": element_id, "element_type": element_type, "value": text, "reason": "color_alpha_not_supported"})
     return text
 
 
@@ -501,7 +524,7 @@ def _element(value: Any, index: int, platform_set: bool = False) -> GraphicsElem
                 raise MotionGraphicsError("INVALID_REQUEST", f"{where_p} must be one of {spec['enum']}: {text!r}", {"field": where_p})
             parameters[name] = text
         elif spec["type"] == _COLOR:
-            parameters[name] = _color(raw, where_p)
+            parameters[name] = _color(raw, where_p, spec.get("alpha", True), (element_id, etype))
         elif spec["type"] == _POS:
             parameters[name] = _position(raw, where_p)
         elif spec["type"] == _FONT:

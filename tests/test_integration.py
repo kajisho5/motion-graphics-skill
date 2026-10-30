@@ -438,6 +438,67 @@ def test_meme_draws_its_top_and_bottom_lines(skill_dir, workspace):
     assert _luma_diff(out, source, 2.0, "100:14:110:85") < 3.0, "pixels changed between the meme's lines"
 
 
+# ---- colours on the graphics templates (ADR-20). ffmpeg-skill/graphics takes --primary / --text-color as RRGGBB only
+# (_common color_hex: "colour must be RRGGBB"), so a colour name used to pass validation here and fail inside the render.
+# Each template element with a colour parameter is rendered twice, once with colour names and once with the RRGGBB
+# those names stand for in FFmpeg's own colour table: the two outputs must match, and must differ from the source.
+TEMPLATE_COLOUR_CASES = [
+    ("title", "title", title_element(title="HELLO", start=0, end=4, text_color="yellow", primary_color="red"), {"text_color": "FFFF00", "primary_color": "FF0000"}),
+    ("lower_third", "lower-third", {"id": "lt1", "type": "lower_third", "start": 0, "end": 4,
+                                    "parameters": {"name": "Ada", "title": "Analyst", "text_color": "White", "primary_color": "navy"}},
+     {"text_color": "FFFFFF", "primary_color": "000080"}),
+    ("bug", "bug", bug_element(title="LIVE", start=0, end=4, text_color="lime"), {"text_color": "00FF00"}),
+    ("chapter", "chapter", chapter_element(title="Part 2", start=0, end=4, primary_color="orange"), {"primary_color": "FFA500"}),
+    ("progress", "progress", progress_element(start=0, end=4, primary_color="magenta"), {"primary_color": "FF00FF"}),
+    ("countdown", "countdown", countdown_element(count_from=3, start=0, end=4, primary_color="cyan"), {"primary_color": "00FFFF"}),
+    ("sticker", "sticker", sticker_element(text="NEW", start=0, end=4, primary_color="gold"), {"primary_color": "FFD700"}),
+    ("hook", "hook", hook_element(title="WATCH THIS", start=0, end=4, text_color="black", primary_color="crimson"), {"text_color": "000000", "primary_color": "DC143C"}),
+]
+
+
+@pytest.mark.parametrize("etype,template,named,hexes", TEMPLATE_COLOUR_CASES, ids=[c[0] for c in TEMPLATE_COLOUR_CASES])
+def test_template_colour_names_render_as_their_rrggbb(skill_dir, workspace, etype, template, named, hexes):
+    with_hex = {**named, "parameters": {**named["parameters"], **hexes}}
+    a = _render_or_refuse(skill_dir, workspace, template, named, f"out/{etype}_named.mp4")
+    b = _render_or_refuse(skill_dir, workspace, template, with_hex, f"out/{etype}_hex.mp4")
+    if a is None or b is None:
+        return
+    out_named, out_hex, source = a["output"]["path"], b["output"]["path"], str(workspace / "video.mp4")
+    for t in (0.6, 2.0, 3.4):
+        assert _luma_diff(out_named, out_hex, t, "320:180:0:0") < 0.5, f"{etype}: a colour name did not render as its RRGGBB at t={t}s"
+    # sanity only (the per-element tests above measure where each template draws): the smallest, the bug, measured 0.45
+    assert _luma_diff(out_named, source, 2.0, "320:180:0:0") > 0.2, f"{etype}: nothing was drawn"
+    recorded = a["operations"][0]["parameters"]
+    assert all(recorded[k] == named["parameters"][k] for k in hexes), "the stage records the request's colours, not the converted ones"
+
+
+def test_a_template_colour_name_actually_changes_the_colour(skill_dir, workspace):
+    # the comparison above would also pass if both renders ignored the colour; this one would not
+    ex = _executor(skill_dir, workspace)
+    yellow = ex.response(request_doc([progress_element(start=0, end=4, primary_color="yellow")], output="out/p_yellow.mp4"))["output"]["path"]
+    blue = ex.response(request_doc([progress_element(start=0, end=4, primary_color="blue")], output="out/p_blue.mp4"))["output"]["path"]
+    assert _luma_diff(yellow, blue, 3.9, "300:3:10:177") > 50.0, "the progress bar did not take the named colour"
+
+
+def test_template_colour_alpha_is_refused_before_anything_renders(skill_dir, workspace):
+    # graphics.py has no opacity flag for its colours, so @alpha cannot be honoured: refused up front, naming the element,
+    # never sent (it would fail inside the render) and never dropped (it would render opaque)
+    ex = _executor(skill_dir, workspace)
+    doc = request_doc([text_overlay_element(start=0, end=1), progress_element(element_id="bar", start=0, end=4, primary_color="red@0.5")], output="out/alpha.mp4")
+    with pytest.raises(MotionGraphicsError) as e:
+        ex.response(doc)
+    assert e.value.code == "UNSUPPORTED_OPERATION"
+    assert e.value.details["element_id"] == "bar" and e.value.details["element_type"] == "progress"
+    assert e.value.details["field"] == "elements[1].parameters.primary_color" and e.value.details["reason"] == "color_alpha_not_supported"
+    assert not (workspace / "out").exists()
+
+
+def test_overlay_colour_names_and_alpha_still_render(skill_dir, workspace):
+    ex = _executor(skill_dir, workspace)
+    resp = ex.response(request_doc([text_overlay_element(text="Hi", start=0, end=2, font_color="Yellow", box=True, box_color="navy@0.5")], output="out/ov_named.mp4"))
+    assert resp["ok"] is True
+
+
 # ---- document.options.platform: ffmpeg-skill --platform, so an omitted margin becomes the destination's safe zone
 def _platform_response(skill_dir, workspace, elements, output, platform):
     d = request_doc(elements, output=output)
