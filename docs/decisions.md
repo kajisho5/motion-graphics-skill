@@ -144,7 +144,9 @@ is one of several ecosystem Skills adding `provides` ahead of that branch landin
 `contract.CAPABILITY_IDS` as this repository's own source of truth in the meantime, to be reconciled if the
 merged spec ever assigns different ids. `text_overlay` and `image_overlay` share `motion_graphics.overlay` because
 that matrix already treats them as one capability ("free-form text, image/logo overlay"), not two — `title` and
-`lower_third` each keep their own built-in-template id. Additive: a new top-level key derived from `ELEMENT_TYPES`,
+`lower_third` each keep their own built-in-template id. **Superseded 2026-10-30:** `text_overlay` now has its own id,
+`motion_graphics.text_overlay` (`image_overlay` keeps `motion_graphics.overlay`). The OS registry keys capabilities
+by id, so a shared id made the two element types indistinguishable there; one id per element type. Additive: a new top-level key derived from `ELEMENT_TYPES`,
 saying nothing `element_types[]` doesn't already say, only indexed by Capability id instead of element type.
 
 ## ADR-11: `bug` is implemented; its `position` is a closed-vocabulary `string`, not a new parameter type

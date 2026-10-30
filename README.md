@@ -279,9 +279,9 @@ respectively) — `contract.response.success` documents all three shapes individ
 guess which one it's looking at.
 
 `provides` lists this Skill's element types by their cross-repository Capability id: `title` ->
-`motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, both `text_overlay` and
-`image_overlay` -> `motion_graphics.overlay` (they share one id — that matrix already treats free-form text and
-image/logo overlay as one capability, not two), `bug`/`chapter`/`progress`/`countdown` -> `motion_graphics.bug`
+`motion_graphics.title_card`, `lower_third` -> `motion_graphics.lower_third`, `image_overlay` ->
+`motion_graphics.overlay` (that matrix's id), `text_overlay` -> `motion_graphics.text_overlay` (one id per element
+type; until 2026-10-30 it shared `motion_graphics.overlay`), `bug`/`chapter`/`progress`/`countdown` -> `motion_graphics.bug`
 / `motion_graphics.chapter` / `motion_graphics.progress` / `motion_graphics.countdown` respectively, and
 `video_overlay` -> `motion_graphics.video_overlay` (its own id, not shared with `motion_graphics.overlay` — a
 video-on-video PiP/chroma-key layer is a materially different capability, see `docs/decisions.md` ADR-15). All
@@ -292,6 +292,11 @@ implementation here (see `docs/decisions.md` ADR-11/ADR-12/ADR-13/ADR-14/ADR-15)
 of this writing on that repository's not-yet-merged architecture branch, not its `main`), so a registry can
 eventually resolve "who provides `motion_graphics.title_card`" without hardcoding this repository. It is additive
 and derived from `model.ELEMENT_TYPES`; see `docs/decisions.md` ADR-10.
+
+`contract_version` (the contract document's shape, `1`) and `dependencies` follow the OS registry's shape:
+`dependencies` names `ffmpeg-skill` with a `version_range` of its `contract_version` (`>=1.0 <2.0`,
+`range_of: "contract_version"`) and the ffmpeg-skill tools used. It is a declaration for the registry;
+compatibility is still decided by the flags present (ADR-18).
 
 ## Security
 
