@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2 — 2026-10-30
+
+- fix: report the release version, single-sourced from pyproject.toml (#28) (891f0b8)
+
 ## v0.2.1 — 2026-10-30
 
 - Add ECOSYSTEM_ROADMAP.md: gaps, wiring and PR-sized steps from the 2026-10-30 ecosystem audit (#27) (94983f4)
