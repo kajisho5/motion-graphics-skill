@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.5 — 2026-10-30
+
+- ci: pin third-party actions by commit SHA (#31) (d634588)
+
 ## v0.2.4 — 2026-10-30
 
 - fix: convert template colour names to RRGGBB, refuse @alpha on them, say so in the contract (ADR-20) (#30) (d2c2fc5)
