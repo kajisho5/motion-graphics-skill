@@ -10,8 +10,9 @@ tests/
 ├── test_security.py       -- shell non-use, tool allowlist, forbidden-field rejection (incl. nested), path traversal / symlink escape, env allowlist, injection payloads as *content*
 ├── test_compat.py         -- ffmpeg-skill capability detection: fake 0.x / 1.10 / 2.x / future / contract-less checkouts, --quality vs --crf, --overwrite, no version window
 ├── test_templates_platform.py -- sticker/hook/meme and options.platform: validation, argv, template/flag detection against synthetic contracts and --help text, the up-front refusal when the checkout lacks one (fake checkout recording every call), doctor/contract surface
+├── test_colors.py         -- the fixed colour-name table (checked against the installed `ffmpeg -colors`), names sent to graphics as RRGGBB, @alpha refused on template colours naming the element, unknown names refused, the contract's per-parameter `alpha: false`
 ├── test_contract.py       -- contract <-> implementation consistency, contract/doctor are deterministic and valid JSON, skill == contract alias
-└── test_integration.py    -- real ffmpeg-skill + real media: title, lower_third, text_overlay, image_overlay, video_overlay (PiP + chroma-key), bug, chapter, progress, countdown, sticker, hook, meme (on a checkout that lacks a template: the refusal instead), options.platform safe-zone placement, fade, audio_stream track selection, multi-element pipelines, reuse + tamper detection, Unicode text, cancellation, CLI exit codes
+└── test_integration.py    -- real ffmpeg-skill + real media: title, lower_third, text_overlay, image_overlay, video_overlay (PiP + chroma-key), bug, chapter, progress, countdown, sticker, hook, meme (on a checkout that lacks a template: the refusal instead), options.platform safe-zone placement, colour names on every template element rendering exactly as their RRGGBB, fade, audio_stream track selection, multi-element pipelines, reuse + tamper detection, Unicode text, cancellation, CLI exit codes
 ```
 
 Run everything:

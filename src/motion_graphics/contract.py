@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
+from .colors import NAMED_COLORS
 from .adapter import FLAG_ALTERNATIVES, FLAGS_USED, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS, TEMPLATE_FLAGS, TOOLS_USED
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
@@ -58,7 +59,7 @@ def dependencies() -> List[Dict[str, Any]]:
 
 
 def _param_schema(ps: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: v for k, v in ps.items() if k in ("type", "required", "min", "max", "enum", "default", "description", "max_length")}
+    return {k: v for k, v in ps.items() if k in ("type", "required", "min", "max", "enum", "default", "description", "max_length", "alpha")}
 
 
 def element_type_specs() -> List[Dict[str, Any]]:
@@ -115,6 +116,16 @@ def skill_contract() -> Dict[str, Any]:
                                 "treats a margin equal to its own default (24) as not given, so the safe zone still applies to an explicit 24; "
                                 "explicit {x,y} positions are unaffected",
                       "requires": "an ffmpeg-skill checkout whose graphics/overlay tools have --platform; otherwise the request is refused before rendering (TOOL_ERROR)"},
+        # ADR-20: what a `color` parameter takes. The template elements' colours go to ffmpeg-skill/graphics, which takes
+        # opaque RRGGBB only: names are converted from this table before the call, and their schemas say alpha: false.
+        "colors": {"named": dict(NAMED_COLORS),
+                   "forms": "a name from `named` (any case) or bare RRGGBB hex (no '#' or '0x'), optionally followed by @A with A in [0, 1]",
+                   "names": "FFmpeg's own colour-name table (libavutil parseutils, `ffmpeg -colors`), fixed in this skill: a name is the same "
+                            "RRGGBB on every element type; a name not in it is INVALID_REQUEST",
+                   "alpha": "accepted by a color parameter unless its schema says alpha: false; there, @A is refused before anything renders "
+                            "(UNSUPPORTED_OPERATION, details.reason color_alpha_not_supported, details.element_id) -- never sent, never dropped",
+                   "delegates": {"ffmpeg-skill/graphics": "RRGGBB only (a name is sent as its RRGGBB; no @alpha, no opacity flag)",
+                                 "ffmpeg-skill/overlay": "name, 0xRRGGBB (a bare RRGGBB gets the 0x prefix) and @alpha, as ffmpeg reads them"}},
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
         "fonts": {"registry": {fid: spec["family"] for fid, spec in FONT_REGISTRY.items()}, "default_font_id": DEFAULT_FONT_ID,
                   "custom_font_file": {"allowed_extensions": list(ALLOWED_FONT_EXTENSIONS), "path_policy": True, "provenance": "font_file_hash (sha256)"},

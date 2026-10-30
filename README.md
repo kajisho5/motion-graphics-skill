@@ -110,6 +110,11 @@ This skill never talks to ffmpeg/ffprobe directly: every render is a typed, argv
   (`reuse_intermediates`, `crf`, `preset`, `audio_stream`, `platform`).
 - **GraphicsElement**: `id`, `type`, `start`/`end` (seconds, half-open, both finite), type-specific typed
   `parameters`, and an optional `animation`.
+- **Colours** (`color` parameters): a colour name from the contract's `colors.named` table (FFmpeg's own 140 names, any
+  case) or bare `RRGGBB` hex, optionally `@alpha` -- except on the template elements (`title`, `lower_third`, `bug`,
+  `chapter`, `progress`, `countdown`, `sticker`, `hook`), whose colour parameters say `"alpha": false`: ffmpeg-skill's
+  `graphics.py` takes opaque `RRGGBB` only, so this skill sends a name as its `RRGGBB` and refuses `@alpha` there before
+  anything renders (`UNSUPPORTED_OPERATION`, naming the element). See ADR-20 in [`docs/decisions.md`](docs/decisions.md).
 - **Animation**: `{"kind": "fade", "parameters": {"duration": <seconds>}}` — a linear alpha fade in at `start` and
   out at `end`, over one shared duration. That is the only configurable animation this contract exposes (see
   [`docs/decisions.md`](docs/decisions.md) for why "slide", "move" and "scale" animations are not implemented).

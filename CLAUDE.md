@@ -24,8 +24,14 @@ additive; see "Known limitations" for when a version bump would actually be requ
   #224 and are **missing from 0.12.5**, the oldest checkout CI verifies: they are detected (`adapter.TEMPLATE_FLAGS`,
   `check_tools()`), `doctor` reports them `unsupported`, and a request for one is refused before rendering (ADR-19).
 - The full `contract`/`doctor`/`validate`/`plan`/`run` CLI, PathPolicy, deterministic provenance, a 12-entry `provides` field,
-  `document.options` `reuse_intermediates`/`crf`/`preset`/`audio_stream`/`platform`, and **397 tests** (unit, security, contract,
-  compat, real-media integration). 397 pass against ffmpeg-skill 2.10.8 and against 0.12.5 (`87c84f2`).
+  `document.options` `reuse_intermediates`/`crf`/`preset`/`audio_stream`/`platform`, and **473 tests** (unit, security, contract,
+  compat, colours, real-media integration). 473 pass against ffmpeg-skill 2.21.0 and against 0.12.5 (`87c84f2`), as of 2026-10-30 (ADR-20).
+- **Colours (ADR-20, 2026-10-30)**: `ffmpeg-skill/graphics` takes `--primary`/`--text-color` as opaque `RRGGBB` only (`color_hex`, every
+  version). Template elements' colour names are converted from the fixed table in `colors.py` (FFmpeg's own 140 names; `test_colors.py`
+  checks it against the installed `ffmpeg -colors`), `@alpha` on them is refused up front (schema `alpha: false`), and a name not in the
+  table is refused for every element type. Do not "fix" a refused `@alpha` by stripping it; it needs an opacity flag on `graphics.py` first.
+  The `alpha` keys changed eight pinned element types' `parameters`, which is **fatal drift** for video-production-agent's pin
+  (`contract_0.2.3.json`): it shows motion-graphics `MISSING` until it re-pins.
 - **ffmpeg-skill has no version window** (ADR-18): flags are read from the checkout's contract/`--help`; CI runs `main` on every
   platform (push and daily) and 0.12.5 on Linux. The Python 3.9 job runs on `ubuntu-24.04` because `ubuntu-latest` (26.04) has no
   3.9 build (#20). Do not re-add a version bound; add a flag to `adapter.REQUIRED_FLAGS`/`OPTIONAL_FLAGS` instead.

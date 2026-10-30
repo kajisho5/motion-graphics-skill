@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
 from .adapter import TEMPLATE_FLAGS, FfmpegSkill, fmt_number, fmt_seconds
 from .canonical import sha256_file, stable_hash
+from .colors import template_color
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
@@ -342,10 +343,12 @@ class Executor:
                         argv += [flag, p[key]]
             # else: progress -- no --title/--position/--from at all (see model.ELEMENT_TYPES); only the trailing
             # primary_color passthrough below applies to it
+            # graphics.py takes these as RRGGBB only: a colour name is sent as its RRGGBB (colors.template_color, ADR-20);
+            # @alpha never gets this far (refused by model._color: these parameters' schemas say alpha: false)
             if p.get("text_color"):
-                argv += ["--text-color", p["text_color"]]
+                argv += ["--text-color", template_color(p["text_color"])]
             if p.get("primary_color"):
-                argv += ["--primary", p["primary_color"]]
+                argv += ["--primary", template_color(p["primary_color"])]
             return "graphics", argv, None
 
         argv = [stage_input, "-o", stage_output, "--position", p["position"]]
