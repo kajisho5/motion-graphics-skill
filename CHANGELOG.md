@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3 — 2026-10-30
+
+- fix: distinct provides ids, contract_version and ffmpeg-skill dependency in the contract (#29) (4438320)
+
 ## v0.2.2 — 2026-10-30
 
 - fix: report the release version, single-sourced from pyproject.toml (#28) (891f0b8)
