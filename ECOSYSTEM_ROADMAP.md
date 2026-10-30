@@ -23,9 +23,9 @@ Agent accepts only 0.1.x and exposes title, lower_third, text_overlay, image_ove
 
 - [ ] **1. Single-source the version** — VERSION from package metadata; release script covers it; coordinate with the agent's version gate
   - Done when: contract version == pyproject; test
-- [ ] **2. Distinct provides ids** — text_overlay and image_overlay both map to motion_graphics.overlay
+- [x] **2. Distinct provides ids** — text_overlay and image_overlay both map to motion_graphics.overlay
   - Done when: no duplicate ids
-- [ ] **3. contract_version + dependencies**
+- [x] **3. contract_version + dependencies**
   - Done when: OS schema check
 - [ ] **4. (optional) `shape` element** — via ffmpeg-skill background + overlay; ADR on two calls per element
   - Done when: integration test

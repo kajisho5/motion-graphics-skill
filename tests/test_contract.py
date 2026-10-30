@@ -87,8 +87,19 @@ def test_contract_provides_one_capability_entry_per_element_type():
     by_type = {p["element_type"]: p["id"] for p in provides}
     assert by_type["title"] == "motion_graphics.title_card"
     assert by_type["lower_third"] == "motion_graphics.lower_third"
-    assert by_type["text_overlay"] == by_type["image_overlay"] == "motion_graphics.overlay"
+    assert by_type["text_overlay"] == "motion_graphics.text_overlay"
+    assert by_type["image_overlay"] == "motion_graphics.overlay"
+    ids = [p["id"] for p in provides]
+    assert len(ids) == len(set(ids)), "one Capability id per element type"
     assert by_type["video_overlay"] == "motion_graphics.video_overlay"
+
+
+def test_contract_os_registry_contract_version_and_dependencies():
+    c = skill_contract()
+    assert c["contract_version"] == 1
+    (dep,) = c["dependencies"]
+    assert dep["skill_id"] == "ffmpeg-skill" and dep["version_range"] == ">=1.0 <2.0" and dep["range_of"] == "contract_version"
+    assert dep["tools"] == [f"ffmpeg-skill/{t}" for t in ("probe", "graphics", "overlay")]
 
 
 def test_contract_forbidden_fields_present():

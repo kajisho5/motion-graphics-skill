@@ -21,20 +21,21 @@ CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
 # repository's not-yet-merged `claude/ai-video-production-os-arch-*` architecture branch --
 # not its main branch -- verified directly against that file's content and against the field
 # shape `registry/contract.py` there actually validates, not merely against its own docs).
-# `text_overlay` and `image_overlay` are both the free-form "overlay" capability there
-# (`motion_graphics.overlay`, "free-form text, image/logo overlay"); `title` and
-# `lower_third` each get their own built-in-template id. `bug`/`chapter`/`progress`/`countdown`/
+# `image_overlay` keeps that matrix's `motion_graphics.overlay` ("free-form text, image/logo
+# overlay"); `text_overlay` shared it until 2026-10-30 and now has its own
+# `motion_graphics.text_overlay`, because a registry keys capabilities by id and one id per
+# entry is what the OS registry needs (ADR-10). `title` and `lower_third` each get their own
+# built-in-template id. `bug`/`chapter`/`progress`/`countdown`/
 # `video_overlay` have no id there at all -- that matrix predates these element types'
 # implementation here -- so the `motion_graphics.<name>` ids below for them are this repository's
 # own provisional choices, not a verified match; reconcile them if the OS side ever assigns
 # different ids once merged. `video_overlay` gets its own id rather than folding into
-# `motion_graphics.overlay`: unlike `text_overlay`/`image_overlay` (which that matrix already
-# treats as one capability), a video-on-video picture-in-picture/chroma-key layer is a materially
+# `motion_graphics.overlay`: a video-on-video picture-in-picture/chroma-key layer is a materially
 # different capability, not the same "free-form text, image/logo overlay" one (ADR-15). `sticker`/`hook`/`meme`
 # (ADR-19) are likewise this repository's own provisional ids, one per template.
 CAPABILITY_IDS: Dict[str, str] = {
     "title": "motion_graphics.title_card", "lower_third": "motion_graphics.lower_third",
-    "text_overlay": "motion_graphics.overlay", "image_overlay": "motion_graphics.overlay",
+    "text_overlay": "motion_graphics.text_overlay", "image_overlay": "motion_graphics.overlay",
     "bug": "motion_graphics.bug", "chapter": "motion_graphics.chapter", "progress": "motion_graphics.progress",
     "countdown": "motion_graphics.countdown", "video_overlay": "motion_graphics.video_overlay",
     "sticker": "motion_graphics.sticker", "hook": "motion_graphics.hook", "meme": "motion_graphics.meme",
@@ -44,6 +45,16 @@ CAPABILITY_IDS: Dict[str, str] = {
 def capability_provides() -> List[Dict[str, str]]:
     return [{"id": CAPABILITY_IDS[etype], "lifecycle": "EXPERIMENTAL", "tool_id": f"{SKILL_ID}/run", "element_type": etype}
             for etype in sorted(ELEMENT_TYPES)]
+
+
+# The AI Video Production OS registry's `dependencies`: ffmpeg-skill, as a range of its contract_version (the one
+# version this adapter knows; ADR-18: compatibility is decided by the flags present, not by version).
+FFMPEG_SKILL_CONTRACT_RANGE = f">={KNOWN_CONTRACT_VERSION} <{int(KNOWN_CONTRACT_VERSION.split('.')[0]) + 1}.0"
+
+
+def dependencies() -> List[Dict[str, Any]]:
+    return [{"skill_id": "ffmpeg-skill", "version_range": FFMPEG_SKILL_CONTRACT_RANGE, "range_of": "contract_version", "required": True,
+             "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]}]
 
 
 def _param_schema(ps: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,7 +91,7 @@ def skill_contract() -> Dict[str, Any]:
               "provenance": "OBSERVED", "mutates_input": False, "delegates_to": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]}]
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
-        "kind": "execution", "role": "motion graphics rendering (execution); not design, not decision",
+        "contract_version": CONTRACT_SCHEMA_VERSION, "kind": "execution", "role": "motion graphics rendering (execution); not design, not decision",
         "description": "Deterministic motion-graphics rendering execution: title cards, lower thirds, free-form text overlays, image/logo overlays, "
                        "and video-on-video picture-in-picture/chroma-key overlays, with built-in template animation (title/lower-third fade and slide) "
                        "or a configurable linear fade (text/image overlays only); typed Graphics Document in, a validated video artifact with "
@@ -92,6 +103,7 @@ def skill_contract() -> Dict[str, Any]:
                          "shell execution", "network access"],
         "tools": tools,
         "provides": capability_provides(),
+        "dependencies": dependencies(),
         "element_types": element_type_specs(),
         "unsupported_element_types": [{"type": t, "status": "not_implemented", "reason": r} for t, r in UNSUPPORTED_ELEMENT_TYPES.items()],
         "animations": animation_specs(),
