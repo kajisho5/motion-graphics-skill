@@ -306,7 +306,7 @@ eventually resolve "who provides `motion_graphics.title_card`" without hardcodin
 and derived from `model.ELEMENT_TYPES`; see `docs/decisions.md` ADR-10.
 
 `contract_version` (the contract document's shape, `1`) and `dependencies` follow the OS registry's shape:
-`dependencies` names `ffmpeg-skill` with a `version_range` of its `contract_version` (`>=1.0 <2.0`,
+`dependencies` names `ffmpeg-skill` with a `version_range` of its `contract_version` (`>=1.0 <3.0`: 1.0 up to ffmpeg-skill 2.x, 2.0 in 3.x,
 `range_of: "contract_version"`) and the ffmpeg-skill tools used. It is a declaration for the registry;
 compatibility is still decided by the flags present (ADR-18).
 

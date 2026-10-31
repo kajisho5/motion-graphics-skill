@@ -29,6 +29,8 @@ Agent accepts only 0.1.x and exposes title, lower_third, text_overlay, image_ove
   - Done when: OS schema check
 - [x] **4. (optional) `shape` element** — via ffmpeg-skill background + overlay; ADR on two calls per element ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33), ADR-22)
   - Done when: integration test
+- [x] **5. ffmpeg-skill 3.0.0** — accept its contract_version 2.0; Python 3.9 CI against the last 2.x (ADR-23) ([#34](https://github.com/kajisho5/motion-graphics-skill/pull/34))
+  - Done when: CI passes against 3.0.0 and the range includes it
 
 ## Boundaries
 
