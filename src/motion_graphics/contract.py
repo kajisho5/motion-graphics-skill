@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
 from .colors import NAMED_COLORS
-from .adapter import (FLAG_ALTERNATIVES, FLAGS_USED, GENERATOR_OPTIONAL_FLAGS, GENERATOR_TOOLS, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS,
+from .adapter import (FLAG_ALTERNATIVES, FLAGS_USED, GENERATOR_OPTIONAL_FLAGS, GENERATOR_TOOLS, KNOWN_CONTRACT_VERSION, KNOWN_CONTRACT_VERSIONS, OPTIONAL_FLAGS, REQUIRED_FLAGS,
                       TEMPLATE_FLAGS, TOOLS_USED)
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
@@ -51,8 +51,9 @@ def capability_provides() -> List[Dict[str, str]]:
 
 
 # The AI Video Production OS registry's `dependencies`: ffmpeg-skill, as a range of its contract_version (the one
-# version this adapter knows; ADR-18: compatibility is decided by the flags present, not by version).
-FFMPEG_SKILL_CONTRACT_RANGE = f">={KNOWN_CONTRACT_VERSION} <{int(KNOWN_CONTRACT_VERSION.split('.')[0]) + 1}.0"
+# versions this adapter knows: 1.0 up to ffmpeg-skill 2.x, 2.0 for 3.x, ADR-23; ADR-18: compatibility is decided by the
+# flags present, not by version).
+FFMPEG_SKILL_CONTRACT_RANGE = f">={KNOWN_CONTRACT_VERSION} <{int(KNOWN_CONTRACT_VERSIONS[-1].split('.')[0]) + 1}.0"
 
 
 def dependencies() -> List[Dict[str, Any]]:

@@ -98,7 +98,7 @@ def test_contract_os_registry_contract_version_and_dependencies():
     c = skill_contract()
     assert c["contract_version"] == 1
     (dep,) = c["dependencies"]
-    assert dep["skill_id"] == "ffmpeg-skill" and dep["version_range"] == ">=1.0 <2.0" and dep["range_of"] == "contract_version"
+    assert dep["skill_id"] == "ffmpeg-skill" and dep["version_range"] == ">=1.0 <3.0" and dep["range_of"] == "contract_version"
     assert dep["tools"] == [f"ffmpeg-skill/{t}" for t in ("probe", "graphics", "overlay", "background")]   # background: shape only (ADR-22)
 
 

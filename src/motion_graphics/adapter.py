@@ -40,9 +40,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .errors import MotionGraphicsError
 
-# contract_version every ffmpeg-skill release so far declares (0.x, 1.x and 2.x alike); reported, not gated on -- a
-# different value only matters if the flags below can no longer be read from it, and that is detected directly
-KNOWN_CONTRACT_VERSION = "1.0"
+# contract_version values ffmpeg-skill releases declare: 1.0 (0.x, 1.x and 2.x), 2.0 (3.x, whose bump changed only
+# cut.py's `precision` / `keyframe_snapped` meaning -- a tool this adapter never calls; ADR-23). Reported, not gated on --
+# a different value only matters if the flags below can no longer be read from it, and that is detected directly
+KNOWN_CONTRACT_VERSIONS = ("1.0", "2.0")
+KNOWN_CONTRACT_VERSION = KNOWN_CONTRACT_VERSIONS[0]   # the oldest; the registry range starts here
 ENV_DIR_KEYS = ("MOTION_GRAPHICS_FFMPEG_SKILL_DIR", "VIDEO_AGENT_FFMPEG_SKILL_DIR")
 TOOLS_USED = ("probe", "graphics", "overlay")
 # argparse dests of the ffmpeg-skill tools this adapter emits; every one must be present in the located checkout

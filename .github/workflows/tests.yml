@@ -21,9 +21,11 @@ jobs:
       matrix:
         # every platform runs against ffmpeg-skill main (the newest release); one Linux job keeps the oldest commit
         # this skill is verified against (ffmpeg-skill 0.12.5: --crf only, no --overwrite, a single _common.py), so
-        # both ends of the detected-capability range stay covered
+        # both ends of the detected-capability range stay covered. ffmpeg-skill 3.0 requires Python 3.10+, so the
+        # Python 3.9 job runs the last 2.x (2.24.1, pinned by commit) and 3.0.0 has its own job (ADR-23)
         include:
-          - {os: ubuntu-latest, python: "3.9", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
+          - {os: ubuntu-latest, python: "3.9", ffmpeg_skill_ref: a2c8433b2441b52b4fe16ce3525100d892ee047f, ffmpeg_skill_label: "2.24.1 (last 2.x, Python 3.9)"}
+          - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: 1dc2f52013956daa1d97fd9d9d53c79b9305bc43, ffmpeg_skill_label: "3.0.0"}
           - {os: ubuntu-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
           - {os: windows-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}
           - {os: macos-latest, python: "3.11", ffmpeg_skill_ref: main, ffmpeg_skill_label: main}

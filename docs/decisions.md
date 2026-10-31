@@ -652,3 +652,24 @@ and compares it with the same render at opacity 0. That reference carries whatev
 applies to the whole picture, which differs between FFmpeg releases (a CI run showed it). Inside the rectangle, while it
 is up, the picture is white; away from it and outside its window it is unchanged. The test also checks that opacity
 0.5 changes the pixels less than an opaque rectangle, and that the clip is reused.
+
+## ADR-23: ffmpeg-skill 3.0.0 is accepted (its `contract_version` 2.0); the Python 3.9 job tests the last 2.x
+
+**Context.** ffmpeg-skill 3.0.0 (`1dc2f52`) declares `contract_version` 2.0 where every earlier release declared 1.0.
+It also drops Python 3.9 and FFmpeg 5.x and changes `cut.py`'s defaults. The registry range `>=1.0 <2.0` therefore
+excluded it. Per its CHANGELOG and `docs/contract.md` "What 3.0 changed", the 2.0 bump is for `cut.py`'s `precision`
+/ `keyframe_snapped` meaning. This skill calls `probe`, `graphics`, `overlay` and `background`, never `cut`.
+No flag in `REQUIRED_FLAGS` / `OPTIONAL_FLAGS` / `FLAG_ALTERNATIVES` was removed. The 5.x-only `drawtext` spellings
+that 3.0 removed are internal to ffmpeg-skill.
+
+**Decision.** `adapter.KNOWN_CONTRACT_VERSIONS = ("1.0", "2.0")`, and `dependencies[].version_range` becomes
+`>=1.0 <3.0`. `ffmpeg_skill.contract_version` stays the oldest (1.0), so the `ffmpeg_skill` block keeps its shape
+(the agent checks it). As before, the number is reported and never gated on (ADR-18).
+
+**Python 3.9.** This skill keeps `requires-python >=3.9`. ffmpeg-skill 3.x does not support 3.9 (its doctor reports
+`ok: false`), so the CI job on Python 3.9 runs the last 2.x, 2.24.1 (`a2c8433`), pinned by commit. A new job runs
+3.0.0 (`1dc2f52`, pinned) on Python 3.11. The main jobs already ran 3.11 with FFmpeg ≥ 6.1.
+
+**Verified.** The full suite (504 tests, real renders included) passes against 3.0.0 on Python 3.11 with
+ffmpeg 6.1.1, and against 2.24.1 on Python 3.9. Before this change it already passed against 3.0.0: only the declared
+range was wrong. `dependencies` changes, so video-production-agent sees the new range when it re-pins (agent side).
