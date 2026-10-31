@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8 — 2026-10-31
+
+- fix: accept ffmpeg-skill 3.0.0 (contract_version 2.0); Python 3.9 CI on the last 2.x (#34) (0646a29)
+
 ## v0.2.7 — 2026-10-31
 
 - shape element: a solid rectangle via ffmpeg-skill background + overlay --video, two calls in one stage (roadmap step 4) (#33) (cf4990d)
