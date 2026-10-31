@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.6 — 2026-10-31
+
+- Single-source the version: importlib.metadata fallback and a release-bump self-check (roadmap step 1) (#32) (db2a066)
+
 ## v0.2.5 — 2026-10-30
 
 - ci: pin third-party actions by commit SHA (#31) (d634588)
