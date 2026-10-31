@@ -63,6 +63,9 @@ what this skill emits:
   `audio_stream`, `fade`, `text`, `font_size`, `font_color`, `border`, `border_color`, `box`, `box_color`, `font`,
   `font_file`, `image`, `scale`, `scale_percent`, `video`, `chromakey`, `chromakey_similarity`, `chromakey_blend`,
   `json`; `overwrite` and `platform` when offered
+- `background` (optional, `adapter.GENERATOR_TOOLS`; `shape` only, ADR-22): `output`, `duration`, `width`, `height`, `color`,
+  `json`; `quality`|`crf`, `preset` and `overwrite` when offered. A checkout without the tool or these flags reports `shape`
+  unsupported; it is never needed to locate a checkout
 
 ## `dropped_non_av_streams` (ffmpeg-skill 0.12.1)
 

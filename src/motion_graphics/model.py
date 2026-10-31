@@ -267,13 +267,39 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "at_least_one_of": ("top", "bottom"),
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:drawtext", "encoder:libx264", "graphics-template:meme"],
     },
+    # shape (ADR-22): the one element type that takes two delegate calls. ffmpeg-skill/background generates the rectangle as
+    # a silent, exact-size solid-colour clip (a derived input, identified and cached by its own content identity), then
+    # ffmpeg-skill/overlay --video composites it like a video_overlay layer. Still one stage per element: `tool` is the
+    # stage's tool (overlay), `generator` the extra call. No raw filter is built (ADR-1).
+    "shape": {
+        "tool": "overlay", "mode": "shape", "generator": "background",
+        "description": "Solid-colour rectangle of an exact size at a position, with opacity, over the element's start/end window "
+                       "(e.g. a backing plate behind text, a letterbox bar, a highlight box): ffmpeg-skill/background generates the "
+                       "rectangle as a clip and ffmpeg-skill/overlay --video composites it, two tool calls in one stage (ADR-22). "
+                       "Rectangles only: no rounded corners, border, rotation or gradient, and no fade (the --video branch has none).",
+        "animation": "none",
+        "parameters": {
+            # background.py refuses odd sizes (4:2:0 chroma), so an odd size is refused here before anything renders
+            "width": {"type": _INT, "required": True, "min": 2, "max": 7680, "multiple_of": 2},
+            "height": {"type": _INT, "required": True, "min": 2, "max": 7680, "multiple_of": 2},
+            # opaque: the rectangle's transparency is `opacity` (overlay's colorchannelmixer), so @alpha is refused like
+            # the template colours' (the generated clip is 4:2:0 video and carries no alpha)
+            "color": {"type": _COLOR, "required": True, "alpha": False,
+                      "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/background as "
+                                     "0xRRGGBB); no @alpha: use opacity"},
+            "position": {"type": _POS, "required": False, "default": "center"},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24, "platform_replaces_default": True},
+            "opacity": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 1.0},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:color", "filter:overlay", "filter:colorchannelmixer", "encoder:libx264",
+                                  "ffmpeg-skill-tool:background"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
 # support they cannot back with a renderer (STEP 9).
-UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {
-    "shape": "not implemented: a rectangle can be composed from ffmpeg-skill's background.py and overlay.py --video (docs/decisions.md ADR-8), but that is two tool calls for one element, which this skill's one-delegate-call-per-element stage model does not cover yet; it needs its own design decision, and building a raw ffmpeg filter string instead is not an option",
-}
+# None today: `shape`, the last one, is implemented as a two-call stage (ADR-22).
+UNSUPPORTED_ELEMENT_TYPES: Dict[str, str] = {}
 
 ANIMATION_KINDS: Dict[str, Dict[str, Any]] = {
     "fade": {
@@ -409,8 +435,11 @@ def _color(value: Any, where: str, alpha: bool = True, element: Optional[Tuple[s
                                    f"FFmpeg's own colour names) -- give RRGGBB hex instead", {"field": where, "reason": "unknown_color_name"})
     if alpha_part is not None and not alpha:
         element_id, element_type = element or ("", "")
-        raise MotionGraphicsError("UNSUPPORTED_OPERATION", f"{where}: element {element_id!r} ({element_type}) draws this colour opaque through "
-                                   f"ffmpeg-skill/graphics, which has no opacity for it -- remove the @{alpha_part} (give RRGGBB or a colour name)",
+        if ELEMENT_TYPES.get(element_type, {}).get("generator") == "background":
+            how = "ffmpeg-skill/background, whose clip has no alpha -- remove the @" + alpha_part + " and set opacity instead"
+        else:
+            how = f"ffmpeg-skill/graphics, which has no opacity for it -- remove the @{alpha_part} (give RRGGBB or a colour name)"
+        raise MotionGraphicsError("UNSUPPORTED_OPERATION", f"{where}: element {element_id!r} ({element_type}) draws this colour opaque through {how}",
                                    {"field": where, "element_id": element_id, "element_type": element_type, "value": text, "reason": "color_alpha_not_supported"})
     return text
 
@@ -536,6 +565,9 @@ def _element(value: Any, index: int, platform_set: bool = False) -> GraphicsElem
                 raise MotionGraphicsError("INVALID_REQUEST", f"{where_p} must be an integer", {"field": where_p})
             if ("min" in spec and raw < spec["min"]) or ("max" in spec and raw > spec["max"]):
                 raise MotionGraphicsError("INVALID_REQUEST", f"{where_p} must be within [{spec.get('min')}, {spec.get('max')}]: {raw}", {"field": where_p})
+            if spec.get("multiple_of") and raw % spec["multiple_of"]:
+                raise MotionGraphicsError("INVALID_REQUEST", f"{where_p} must be a multiple of {spec['multiple_of']}: {raw}",
+                                           {"field": where_p, "multiple_of": spec["multiple_of"]})
             parameters[name] = raw
         elif spec["type"] == _NUM:
             num = _finite_number(raw, where_p)

@@ -136,6 +136,7 @@ generated list:
 | `sticker` | `ffmpeg-skill/graphics --template sticker` | fixed pop-in (0.25s fade up + rise) and 0.3s fade-out (not configurable) |
 | `hook` | `ffmpeg-skill/graphics --template hook` | none at all -- a bar that empties across the window, no fade |
 | `meme` | `ffmpeg-skill/graphics --template meme` | none at all |
+| `shape` | `ffmpeg-skill/background` (the rectangle as a clip), then `ffmpeg-skill/overlay --video` | none at all -- `--video` never applies a fade |
 
 `bug` is a persistent text watermark in one of the four corners (e.g. `"LIVE"` or `"@handle"`) — its `position` is
 a closed vocabulary of just those four corners (`top-left`/`top-right`/`bottom-left`/`bottom-right`), a strict
@@ -171,10 +172,16 @@ one of them. Colours and position are fixed by the template.
 them `unsupported` on an older checkout, and a request for one is refused before anything renders (`TOOL_ERROR`,
 `retryable: false`, `details.reason: ffmpeg_skill_lacks_template`) — see `docs/decisions.md` ADR-19.
 
-`shape` is **not implemented** in this contract (see `unsupported_element_types` in the contract) — it is published as
-unsupported by `doctor`/`contract`. It is not blocked on ffmpeg-skill: a rectangle can be composed from its
-`background.py` and `overlay.py --video`, but that is two tool calls for one element, which this skill's stage model does not
-cover yet, so it needs its own design decision first (`docs/decisions.md` ADR-8).
+`shape` is a solid-colour rectangle: `width` and `height` (even pixels, 2-7680; ffmpeg-skill's background refuses odd sizes),
+`color` (opaque: a name or RRGGBB, no `@alpha`), `position` (default `center`), `margin` and `opacity` (default 1). Use it for a
+backing plate behind text, a letterbox bar or a highlight box. It is the one element type that takes two ffmpeg-skill calls in
+its stage (`docs/decisions.md` ADR-22): `ffmpeg-skill/background` generates the rectangle as a clip lasting until the element's
+`end`, then `ffmpeg-skill/overlay --video` composites it in the element's window. The clip is a derived input: it has its own
+identity (size, colour, duration, encoder settings, tool versions; never a path), lives in the document's work dir, and is reused
+when its manifest and sha256 match. The response's operation for the element names it under `derived`. Rectangles only: no rounded
+corners, border, rotation, gradient or fade. A checkout without `background.py` (ffmpeg-skill before 0.11.0) reports `shape`
+`unsupported` in `doctor`, and a request for one is refused before anything renders (`TOOL_ERROR`, `details.reason:
+ffmpeg_skill_lacks_tool`).
 
 ## Platform safe zones
 
@@ -288,7 +295,7 @@ guess which one it's looking at.
 `motion_graphics.overlay` (that matrix's id), `text_overlay` -> `motion_graphics.text_overlay` (one id per element
 type; until 2026-10-30 it shared `motion_graphics.overlay`), `bug`/`chapter`/`progress`/`countdown` -> `motion_graphics.bug`
 / `motion_graphics.chapter` / `motion_graphics.progress` / `motion_graphics.countdown` respectively, and
-`video_overlay` -> `motion_graphics.video_overlay` (its own id, not shared with `motion_graphics.overlay` — a
+`shape` -> `motion_graphics.shape` (ADR-22), `video_overlay` -> `motion_graphics.video_overlay` (its own id, not shared with `motion_graphics.overlay` — a
 video-on-video PiP/chroma-key layer is a materially different capability, see `docs/decisions.md` ADR-15). All
 five of these are this repository's own provisional ids — that matrix predates all five element types'
 implementation here (see `docs/decisions.md` ADR-11/ADR-12/ADR-13/ADR-14/ADR-15). Each entry also carries its

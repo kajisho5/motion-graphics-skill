@@ -18,8 +18,10 @@ from conftest import (bug_element, chapter_element, countdown_element, hook_elem
 
 TEMPLATE_COLOUR_PARAMS = sorted((t, k) for t, s in ELEMENT_TYPES.items() if s["tool"] == "graphics"
                                 for k, ps in s["parameters"].items() if ps["type"] == "color")
+# overlay colours that ffmpeg reads itself (names, 0xRRGGBB, @alpha); shape's colour goes to ffmpeg-skill/background first and
+# is opaque (alpha: false, ADR-22), so it is covered by the shape tests below instead
 OVERLAY_COLOUR_PARAMS = sorted((t, k) for t, s in ELEMENT_TYPES.items() if s["tool"] == "overlay"
-                               for k, ps in s["parameters"].items() if ps["type"] == "color")
+                               for k, ps in s["parameters"].items() if ps["type"] == "color" and ps.get("alpha", True))
 BUILDERS = {"title": title_element, "bug": bug_element, "chapter": chapter_element, "progress": progress_element, "countdown": countdown_element,
             "sticker": sticker_element, "hook": hook_element,
             "lower_third": lambda **p: {"id": "lt1", "type": "lower_third", "start": 0, "end": 2, "parameters": {"name": "Ada", **p}}}
@@ -129,4 +131,24 @@ def test_contract_marks_every_template_colour_alpha_false_and_no_overlay_colour(
 def test_contract_publishes_the_colour_table():
     colors = skill_contract()["colors"]
     assert colors["named"] == NAMED_COLORS
-    assert "alpha: false" in colors["alpha"] and set(colors["delegates"]) == {"ffmpeg-skill/graphics", "ffmpeg-skill/overlay"}
+    assert "alpha: false" in colors["alpha"] and set(colors["delegates"]) == {"ffmpeg-skill/graphics", "ffmpeg-skill/overlay", "ffmpeg-skill/background"}
+
+
+# ---- shape (ADR-22): its colour goes to ffmpeg-skill/background as 0xRRGGBB, opaque; transparency is `opacity`
+def test_shape_colour_is_sent_to_background_as_rrggbb():
+    from conftest import shape_element
+    doc = parse_request(request_doc([shape_element(color="Crimson")]))
+    assert Executor._shape_clip_parameters(doc.elements[0])["color"] == "DC143C"
+    doc = parse_request(request_doc([shape_element(color="12ab9F")]))
+    assert Executor._shape_clip_parameters(doc.elements[0])["color"] == "12ab9F"
+
+
+@pytest.mark.parametrize("value", ["red@0.5", "FF0000@1.0"])
+def test_shape_colour_alpha_is_refused_pointing_at_opacity(value):
+    from conftest import shape_element
+    with pytest.raises(MotionGraphicsError) as e:
+        parse_request(request_doc([shape_element(element_id="plate", color=value)]))
+    assert e.value.code == "UNSUPPORTED_OPERATION" and e.value.details["reason"] == "color_alpha_not_supported"
+    assert e.value.details["element_id"] == "plate" and "opacity" in e.value.message and "background" in e.value.message
+    ps = {t["type"]: t for t in skill_contract()["element_types"]}["shape"]["parameters"]["color"]
+    assert ps["alpha"] is False and "no @alpha" in ps["description"]

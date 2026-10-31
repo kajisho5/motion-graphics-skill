@@ -105,6 +105,8 @@ reports success.
 
 ## ADR-8: `shape` is not implemented in this contract; it needs a design decision here, not a new ffmpeg-skill tool
 
+**Superseded by ADR-22 (2026-10-31)**: the design decision this ADR asked for has been made and `shape` is implemented.
+
 **Decision**: `shape` is declared in `model.UNSUPPORTED_ELEMENT_TYPES` and never appears as `supported` in
 `contract`/`doctor`. (`chapter`, `bug`, `progress`, and `countdown` were in this list too, at various points,
 until ADR-11/ADR-12/ADR-13/ADR-14 implemented them one PR at a time. ADR-19 later implemented `sticker`, `hook` and
@@ -580,3 +582,73 @@ release workflow's bump moves every reported version.
 **Effect on callers**: none. `contract --json` is byte-identical before and after (it already reported `0.2.5`); `contract_version` and
 `dependencies` are unchanged. video-production-agent gates on `SUPPORTED_SKILL_VERSIONS = ("0.1.", "0.2.")`, so this ships as a patch
 release (no `feature` label) to stay inside it.
+
+## ADR-22: `shape` is one stage with two ffmpeg-skill calls; the generated clip is a derived input with its own identity
+
+**Decision**: `shape` (a solid-colour rectangle) is implemented as **one stage per element, as before**. Before its
+overlay call, the stage makes one extra call: `ffmpeg-skill/background` generates the rectangle as a silent,
+exact-size, solid-colour clip lasting until the element's `end`. `ffmpeg-skill/overlay --video` then composites that
+clip in the element's window, with the element's `position`, `margin` and `opacity`, exactly as it composites a
+`video_overlay` layer. Both are typed calls, so no filter string is built (ADR-1). The clip is a **derived input**,
+not a stage:
+- *Identity:* `stable_hash` of the skill version, the tool versions, the generator name, the clip parameters (width,
+  height, colour as RRGGBB, duration) and the encoder settings (`crf`, `preset`). It contains no path and no element id,
+  so the same rectangle placed elsewhere has the same clip identity (ADR-6).
+- *Stage identity:* the stage's `parameters` carry `clip: <clip identity>`. A change to the rectangle changes the
+  stage identity and invalidates every later stage, as any parameter change does. The clip identity is computed
+  before the clip exists, so a reused stage never renders its clip.
+- *Cache:* the clip lives in the document's work dir (`.motion-graphics/<document_id>/shape-<identity16>.<ext>`) with a
+  manifest, and is reused when the manifest and sha256 match, like a non-final stage (ADR-5). A document with a shape
+  gets the work dir even when it has one element. The requested output itself is still always rendered and
+  re-validated (ADR-5).
+- *Provenance:* the stage's `StageResult` keeps `tool: ffmpeg-skill/overlay` and gains `derived`: `[{tool:
+  ffmpeg-skill/background, operation_id, status (rendered|reused), output_hash, parameters, seconds,
+  tool_commands_observed}]`. A reused stage has no `derived`, because nothing ran.
+- *Validation:* the clip is probed after the call. It must be exactly the requested width x height, and at least as
+  long as the element's end (within the duration tolerance). Otherwise it is `VALIDATION_ERROR` and the partial clip
+  is removed.
+
+**Why one stage with a derived input, not two stages**: a stage is "one full-frame pass over the previous stage's
+video" (ADR-4/ADR-5), and its output is the next stage's input. The rectangle clip is not a pass over the video; it is
+an asset, like `image_overlay`'s PNG, that happens to be generated rather than supplied. Two stages would put a
+non-video-chain artifact into the chain, break the stage index <-> element correspondence the timeline, response and
+the agent's operation list rely on, and make "the last stage writes the requested output" depend on the element type.
+As a derived input it reuses what assets already have: identity by content, not path (ADR-6), and resolution before
+rendering. It also adds only what an asset lacks: a manifest so it is not regenerated.
+
+**Why `background` is an optional tool, not a fourth required one**: `TOOLS_USED` decides which checkouts are usable at
+all (`locate`, ADR-18). `background.py` arrived in ffmpeg-skill 0.11.0 and only `shape` needs it, so it is detected
+like a graphics template (ADR-19): `adapter.GENERATOR_TOOLS` lists its required flags (`output`, `duration`, `width`,
+`height`, `color`, `json`), and `check_tools` reports `generator_support`. doctor reports
+`ffmpeg-skill-tool:background` supported or unsupported, and `shape` is unsupported without it. A request with a
+shape on such a checkout is refused before anything renders (`TOOL_ERROR`, `details.reason: ffmpeg_skill_lacks_tool`,
+not retryable). `--quality`|`--crf`, `--preset` and `--overwrite` are passed when the checkout has them. The script
+allowlist admits exactly `TOOLS_USED` plus `GENERATOR_TOOLS`.
+
+**Parameters**: `width` and `height` are integers 2..7680 and must be even (`multiple_of: 2`), because `background.py`
+refuses odd sizes (4:2:0 chroma); an odd size is refused up front instead. `color` is opaque: a name is converted to
+RRGGBB from the fixed table (ADR-20) and sent as `0xRRGGBB`. `@alpha` is refused (`alpha: false`), because the
+generated clip is 4:2:0 video with no alpha; transparency is `opacity` (overlay's colorchannelmixer). `position`
+defaults to `center`; `margin` behaves as on the other overlays, including the platform safe zone. The element's
+`animation` is `"none"`: `overlay.py`'s `--video` branch has no fade (ADR-15). The clip lasts until the element's
+`end`, from 0: `overlay.py --video` without `--place` plays the layer from the start of the video, and its `enable`
+window shows it only in [start, end].
+
+**Not offered**: rounded corners, a border, rotation and gradients. `background.py --gradient` exists, but a gradient
+rectangle was not needed and is a separate parameter design. None of these may be built from a raw filter (ADR-1).
+
+**Consumers**: the contract gains an element type (`shape`, with a new `generator` key and a `multiple_of` schema key)
+and a Capability id `motion_graphics.shape`. `unsupported_element_types` is now `[]`. `ffmpeg_skill.generator_tools`,
+`dependencies[].tools` and the tool's `delegates_to` name `background`. Also changed: `execution.executables` (a
+second entry for `background.py`), `provenance.per_operation` (`derived`) and `colors.delegates`
+(`ffmpeg-skill/background`). video-production-agent's motion-graphics adapter counts `execution`, `provenance` and
+`colors` as fatal drift, so it needs a re-pin (on the agent side, not here) before it treats this release as
+available. `check_contract()` itself passes: every parameter type is one it knows, and `shape`'s tool is an
+`ffmpeg-skill/` tool.
+
+**Verified** on ffmpeg-skill 2.21.0 (main) and 0.12.5 (`87c84f2`, the oldest verified checkout, which already has
+`background.py` with these flags). `tests/test_shape.py` renders a white 100x60 rectangle at the top-left in [1, 3] s
+and compares it with the same render at opacity 0. That reference carries whatever colour handling ffmpeg-skill/overlay
+applies to the whole picture, which differs between FFmpeg releases (a CI run showed it). Inside the rectangle, while it
+is up, the picture is white; away from it and outside its window it is unchanged. The test also checks that opacity
+0.5 changes the pixels less than an opaque rectangle, and that the clip is reused.

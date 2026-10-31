@@ -301,6 +301,9 @@ class _Info:
     def template_support(self, template):
         return self.support.get(template)
 
+    def tool_support(self, tool):
+        return True
+
 
 def _caps(support):
     return capability_status(_Info(support), {"ffmpeg": "6", "ffprobe": "6", "available": ["filter:drawtext", "filter:drawbox", "filter:overlay", "filter:color", "encoder:libx264"],

@@ -32,6 +32,7 @@ def test_popen_called_with_a_list_not_a_string():
 # ---- executable allowlist
 def test_tool_allowlist_is_closed():
     assert adapter.TOOLS_USED == ("probe", "graphics", "overlay")
+    assert tuple(adapter.GENERATOR_TOOLS) == ("background",)          # shape only, detected per checkout (ADR-22)
     skill = adapter.FfmpegSkill.__new__(adapter.FfmpegSkill)
     with pytest.raises(MotionGraphicsError) as e:
         skill.script("cut")  # not on the allowlist, even though ffmpeg-skill itself has this tool

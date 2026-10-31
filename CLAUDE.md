@@ -103,11 +103,10 @@ type, a new top-level key), before merging.
 
 ## Known limitations (intentional, documented, not gaps to silently "fix")
 
-- `shape` is the only unsupported element type (`unsupported_element_types` in the contract). **It is not blocked on ffmpeg-skill** (the
-  earlier claim here and in ADR-8 was wrong): `background.py` (a solid-colour clip of exact size) plus `overlay.py --video` (position,
-  opacity, time window) draws a rectangle with no raw filter, verified on ffmpeg-skill 2.10.8. It is blocked on a design decision in this
-  repository: the stage model, identity (ADR-5/6) and `StageResult` assume one delegate call per element, a rectangle is two. Decide that
-  first (ADR-8). Rounded corners, borders and rotation were not tried. Never build a filter string to get around it (ADR-1).
+- `shape` is implemented (ADR-22, 2026-10-31): one stage per element still, and the stage's extra call (`ffmpeg-skill/background`, an
+  optional tool detected like a template: `adapter.GENERATOR_TOOLS`) makes the rectangle clip, a derived input with its own identity and
+  cache entry, named under the operation's `derived`. No element type is unsupported now. Rounded corners, borders, rotation and gradients
+  are not offered. Never build a filter string to get them (ADR-1).
 - Every element type has a fixed, honestly-labeled `animation` value that is not `"configurable"`, except `text_overlay`/`image_overlay`
   (the only two with a real, configurable `fade`): `title`/`bug`/`chapter` get `"builtin_fade"`, `lower_third` `"builtin_slide_fade"`,
   `countdown` `"builtin_pulse"`, `sticker` `"builtin_pop"` (fade up while rising 0.25 s, fade out over the last 0.3 s), and `progress`, `hook`,
@@ -139,8 +138,8 @@ type, a new top-level key), before merging.
 
 ## Next highest-value task (as of last check)
 
-1. **Decide `shape`** (ADR-8): the design question above. Write the decision as an ADR first; then implement it as a two-stage element, or
-   decide it does not fit and say why in ADR-8 instead of leaving the stale "blocked upstream" wording.
+1. ~~Decide `shape`~~: done (ADR-22). video-production-agent must re-pin before it uses it: the `execution`, `provenance` and `colors`
+   sections changed, which its adapter treats as fatal drift.
 2. **Re-check ffmpeg-skill's templates and flags after each of its releases**: the daily `main` job in CI will fail on a breaking change, but
    it will not announce a *new* template or flag. Diff `graphics.py --help` against `adapter.TEMPLATE_FLAGS` and `ELEMENT_TYPES`.
 3. **Unwired capabilities above**, starting with whichever the downstream agent (or the user) actually needs; `--lang` first if Japanese

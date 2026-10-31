@@ -51,12 +51,15 @@ def test_too_many_elements_rejected():
 
 
 # ---- element type
-def test_unsupported_element_type_rejected_with_reason():
-    d = request_doc([{"id": "s1", "type": "shape", "start": 0, "end": 1, "parameters": {}}])
+def test_unsupported_element_type_rejected_with_reason(monkeypatch):
+    # no type is unsupported today (shape was the last, ADR-22); the refusal path itself must still name the reason
+    import motion_graphics.model as model
+    monkeypatch.setitem(model.UNSUPPORTED_ELEMENT_TYPES, "wipe", "not implemented: a test reason")
+    d = request_doc([{"id": "s1", "type": "wipe", "start": 0, "end": 1, "parameters": {}}])
     with pytest.raises(MotionGraphicsError) as e:
         parse_request(d)
     assert e.value.code == "UNSUPPORTED_OPERATION"
-    assert "shape" in e.value.message
+    assert "wipe" in e.value.message and "a test reason" in e.value.message
 
 
 def test_unknown_element_type_rejected():
@@ -587,6 +590,10 @@ class _InfoStub:
 
     @staticmethod
     def template_support(template):
+        return True
+
+    @staticmethod
+    def tool_support(tool):
         return True
 
 

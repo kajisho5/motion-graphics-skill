@@ -12,12 +12,13 @@ graphics model, security boundary, and testing notes.
 ## Ask for this, not that
 
 Ask this Skill to render: an exact `title`/`lower_third`/`text_overlay`/`image_overlay`/`video_overlay`/`bug`/
-`chapter`/`progress`/`countdown`/`sticker`/`hook`/`meme` element, with exact `start`/`end` seconds and exact parameter values already
+`chapter`/`progress`/`countdown`/`sticker`/`hook`/`meme`/`shape` element, with exact `start`/`end` seconds and exact parameter values already
 decided. Every field is typed and range-checked; there is no free-text "make it look nice" input.
 
 Do not ask it to: choose what text or image to show, choose when something should appear, choose colors/fonts/
 layout for aesthetic reasons, animate anything beyond a linear `fade` (no slide/move/scale — see
-`unsupported_animations` in the contract), draw a shape (`shape` is not implemented yet), or accept a
+`unsupported_animations` in the contract), draw anything but a solid rectangle (`shape`: no rounded corners, border, rotation
+or gradient), or accept a
 raw ffmpeg filter/command/argv/shell/env — those field names are rejected wherever they appear in the request,
 recursively (`INVALID_REQUEST`). All of that is `video-production-agent`'s job, not this Skill's.
 
