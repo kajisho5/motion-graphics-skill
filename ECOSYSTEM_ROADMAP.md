@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-pyproject v0.2.0 but `VERSION` in `__init__` is 0.1.0, so the contract reports 0.1.0. 12 elements (title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme). 241 tests, CI on 3 OSes.
+pyproject v0.2.0 but `VERSION` in `__init__` is 0.1.0, so the contract reports 0.1.0. 12 elements (title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme); `shape` (a solid rectangle, two ffmpeg-skill calls in one stage) added by [#33](https://github.com/kajisho5/motion-graphics-skill/pull/33). 241 tests, CI on 3 OSes.
 
 ## What this repository owns
 
@@ -27,7 +27,7 @@ Agent accepts only 0.1.x and exposes title, lower_third, text_overlay, image_ove
   - Done when: no duplicate ids
 - [x] **3. contract_version + dependencies**
   - Done when: OS schema check
-- [ ] **4. (optional) `shape` element** — via ffmpeg-skill background + overlay; ADR on two calls per element
+- [x] **4. (optional) `shape` element** — via ffmpeg-skill background + overlay; ADR on two calls per element ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33), ADR-22)
   - Done when: integration test
 
 ## Boundaries

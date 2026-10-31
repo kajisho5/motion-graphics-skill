@@ -1,6 +1,7 @@
 """Request -> validated Graphics Document -> render plan -> ffmpeg-skill execution -> validated output -> response.
 
-Every element is rendered as one full-frame ffmpeg-skill invocation, applied in timeline order (docs/decisions.md)
+Every element is rendered as one full-frame ffmpeg-skill invocation (a `shape` element first generates its rectangle
+clip with ffmpeg-skill/background, a derived input with its own identity and cache entry: ADR-22), applied in timeline order (docs/decisions.md)
 to the output of the previous element (or to the source video for the first element). All but the last element
 write into an identity-named cache file under `<workspace>/.motion-graphics/<document_id>/` and are reused when an
 existing file's manifest and sha256 match (STEP 18); the last element always (re)writes the requested output path,
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import TEMPLATE_FLAGS, FfmpegSkill, fmt_number, fmt_seconds
+from .adapter import GENERATOR_TOOLS, TEMPLATE_FLAGS, FfmpegSkill, fmt_number, fmt_seconds
 from .canonical import sha256_file, stable_hash
 from .colors import template_color
 from .errors import MotionGraphicsError
@@ -52,6 +53,9 @@ class StageResult:
     # that never reports the field at all -- never guessed, per ADR-12/ADR-16 ("never claim support that isn't
     # backed by a real renderer").
     dropped_non_av_streams: Optional[bool] = None
+    # ADR-22: a shape element's generated clip -- {tool, operation_id, status, output_hash, parameters, seconds,
+    # tool_commands_observed}; None for every other element type
+    derived: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = {"index": self.index, "element_id": self.element_id, "type": self.type, "tool": f"ffmpeg-skill/{self.tool}",
@@ -60,6 +64,8 @@ class StageResult:
              "tool_commands_observed": self.tool_commands_observed}
         if self.dropped_non_av_streams is not None:
             d["dropped_non_av_streams"] = self.dropped_non_av_streams
+        if self.derived is not None:
+            d["derived"] = self.derived
         return d
 
 
@@ -150,8 +156,10 @@ class Executor:
 
         # A single-element document never has a non-final stage, so it never needs (or creates) the cache
         # directory at all -- it renders straight into the requested output (ADR-5, docs/decisions.md).
+        # A shape element's generated clip is a derived input that also lives there (ADR-22), so a document with a shape
+        # gets the directory even when it has one element.
         work_dir: Optional[Path] = None
-        if len(ordered) > 1:
+        if len(ordered) > 1 or any(el.type == "shape" for el in ordered):
             work_dir = self.policy.resolve_work_dir(os.path.join(WORK_DIR_NAME, document_id))
             work_dir.mkdir(parents=True, exist_ok=True)
         output_path.parent.mkdir(parents=True, exist_ok=True)  # ffmpeg-skill does not create the output directory itself
@@ -167,6 +175,11 @@ class Executor:
         for i, el in enumerate(ordered):
             is_last = i == len(ordered) - 1
             identity_input = self._identity_parameters(el, resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id))
+            clip: Optional[Dict[str, Any]] = None
+            if el.type == "shape":
+                # the clip's identity is known before it exists, so the stage identity (and a reuse of the stage) never needs it rendered
+                clip = {"identity": self._shape_clip_identity(el, crf, preset), "parameters": self._shape_clip_parameters(el)}
+                identity_input = dict(identity_input, clip=clip["identity"])
             identity = stable_hash({"skill_version": VERSION, "tool_versions": self.tool_versions, "index": i, "previous": prev_identity,
                                      "type": el.type, "start": el.start, "end": el.end, "animation": el.animation.to_dict() if el.animation else None,
                                      "parameters": identity_input, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform})
@@ -193,7 +206,14 @@ class Executor:
             for stale in (target, manifest_path) if manifest_path else (target,):
                 if stale and stale.exists() and stale != output_path:
                     stale.unlink()
-            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id), crf, preset, audio_stream, platform)
+            derived: Optional[List[Dict[str, Any]]] = None
+            asset = resolved_assets.get(el.element_id)
+            if clip is not None:
+                assert work_dir is not None
+                made = self._shape_clip(el, clip, work_dir, output_ext, crf, preset)
+                derived = [made["record"]]
+                asset = {"path": made["path"]}
+            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), asset, resolved_fonts.get(el.element_id), crf, preset, audio_stream, platform)
             try:
                 run = self.skill.run_tool(tool, argv, self.timeout, tool_cwd)
                 artifact_meta = self._validate_stage_output(target, el, width, height, prev_duration)
@@ -209,7 +229,7 @@ class Executor:
                                                       "duration": artifact_meta["duration"], "tool": f"ffmpeg-skill/{tool}", "tool_versions": self.tool_versions,
                                                       "skill": SKILL_ID, "skill_version": VERSION}, indent=2, sort_keys=True), encoding="utf-8")
             results.append(StageResult(i, el.element_id, el.type, tool, "rendered", identity, identity_input, [prev_identity], out_hash, str(target),
-                                        run.seconds, run.commands, run.dropped_non_av_streams))
+                                        run.seconds, run.commands, run.dropped_non_av_streams, derived))
             stage_input, prev_identity, prev_duration = str(target), identity, artifact_meta["duration"]
 
         warnings: List[str] = []
@@ -247,6 +267,12 @@ class Executor:
             return
         info = self.skill.info()
         for el in doc.ordered_elements():
+            generator = ELEMENT_TYPES[el.type].get("generator")
+            if generator and info.tool_support(generator) is False:
+                raise MotionGraphicsError("TOOL_ERROR", f"elements[{el.element_id}]: the {el.type!r} element type needs ffmpeg-skill/{generator} with the flags "
+                                          f"{list(GENERATOR_TOOLS[generator])}, which the ffmpeg-skill at {info.directory} (version {info.version}) does not have",
+                                          {"reason": "ffmpeg_skill_lacks_tool", "element_id": el.element_id, "type": el.type, "tool": f"ffmpeg-skill/{generator}",
+                                           "ffmpeg_skill_version": info.version}, retryable=False)
             template = ELEMENT_TYPES[el.type].get("template")
             if template in TEMPLATE_FLAGS and info.template_support(template) is False:
                 raise MotionGraphicsError("TOOL_ERROR", f"elements[{el.element_id}]: the {el.type!r} element type needs ffmpeg-skill's graphics template {template!r}, "
@@ -272,6 +298,8 @@ class Executor:
         d = el.to_dict()
         d["index"] = index
         d["tool"] = f"ffmpeg-skill/{ELEMENT_TYPES[el.type]['tool']}"
+        if ELEMENT_TYPES[el.type].get("generator"):
+            d["generator"] = f"ffmpeg-skill/{ELEMENT_TYPES[el.type]['generator']}"
         if el.element_id in assets:
             d["asset"] = {"sha256": assets[el.element_id]["sha256"], "size": assets[el.element_id]["size"]}
         if el.element_id in fonts_:
@@ -384,6 +412,10 @@ class Executor:
                     font_path = Path(font.font_file_path)
                     argv += ["--font-file", font_path.name]
                     cwd = str(font_path.parent)
+        elif el.type == "shape":
+            # the generated rectangle clip (ADR-22), composited at its own size: no --scale, no chroma key
+            assert asset is not None
+            argv += ["--video", asset["path"]]
         elif el.type == "image_overlay":
             assert asset is not None
             argv += ["--image", asset["path"]]
@@ -402,6 +434,63 @@ class Executor:
                 argv += ["--chromakey", _overlay_color(p["chromakey"]), "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
                          "--chromakey-blend", fmt_number(p["chromakey_blend"])]
         return "overlay", argv, cwd
+
+    # ---- shape: the generated clip (ADR-22)
+    @staticmethod
+    def _shape_clip_parameters(el: GraphicsElement) -> Dict[str, Any]:
+        """What ffmpeg-skill/background is asked for: the rectangle's size and opaque colour (a name sent as its RRGGBB),
+        lasting until the element's end so the clip covers the whole window from the video's start."""
+        p = el.parameters
+        return {"width": p["width"], "height": p["height"], "color": template_color(p["color"]), "duration": fmt_seconds(el.end)}
+
+    def _shape_clip_identity(self, el: GraphicsElement, crf: int, preset: str) -> str:
+        return stable_hash({"skill_version": VERSION, "tool_versions": self.tool_versions, "generator": "background",
+                            "parameters": self._shape_clip_parameters(el), "crf": crf, "preset": preset})
+
+    def _shape_clip(self, el: GraphicsElement, clip: Dict[str, Any], work_dir: Path, ext: str, crf: int, preset: str) -> Dict[str, Any]:
+        """Generate (or reuse) the rectangle clip: ffmpeg-skill/background, then a probe that it is exactly the size asked for
+        and lasts the element's window. Reused from the work dir when its manifest and sha256 match, like a non-final stage."""
+        identity, cp = clip["identity"], clip["parameters"]
+        path = work_dir / f"shape-{identity[:16]}{ext}"
+        manifest = path.with_name(path.stem + ".json")
+        record: Dict[str, Any] = {"tool": "ffmpeg-skill/background", "operation_id": identity, "parameters": cp}
+        if self.reuse and self._reusable(identity, path, manifest):
+            record.update(status="reused", output_hash=json.loads(manifest.read_text(encoding="utf-8"))["output_hash"], seconds=0.0, tool_commands_observed=[])
+            return {"path": str(path), "record": record}
+        for stale in (path, manifest):
+            self._remove_partial(stale)
+        info = self.skill.info() if self.skill is not None else None
+        flags = ((info.features.get("generator_flags") or {}).get("background") or {}) if info is not None else {}
+        argv = ["-o", str(path), "--duration", cp["duration"], "--width", str(cp["width"]), "--height", str(cp["height"]), "--color", "0x" + cp["color"]]
+        if flags.get("encoder_quality"):
+            argv += [flags["encoder_quality"], str(crf)]
+        if flags.get("preset"):
+            argv += ["--preset", preset]
+        if flags.get("overwrite"):
+            argv.append("--overwrite")
+        what = f"elements[{el.element_id}] (shape clip)"
+        try:
+            run = self.skill.run_tool("background", argv, self.timeout)
+            if not path.is_file() or path.stat().st_size <= 0:
+                raise MotionGraphicsError("OUTPUT_ERROR", f"{what}: ffmpeg-skill/background reported success but wrote no clip", {"reason": "missing_output", "path": str(path)})
+            meta = self.skill.probe(str(path), self.timeout)
+            video = meta.get("video") or {}
+            if (int(video.get("width") or 0), int(video.get("height") or 0)) != (cp["width"], cp["height"]):
+                raise MotionGraphicsError("VALIDATION_ERROR", f"{what}: the clip is {video.get('width')}x{video.get('height')}, not {cp['width']}x{cp['height']}",
+                                           {"reason": "resolution_mismatch", "path": str(path)})
+            duration = float(meta.get("duration") or 0.0)
+            if duration + DURATION_TOLERANCE < el.end:
+                raise MotionGraphicsError("VALIDATION_ERROR", f"{what}: the clip lasts {duration:.3f}s, shorter than the element's end ({el.end}s)",
+                                           {"reason": "duration_mismatch", "duration": duration, "expected": el.end, "path": str(path)})
+        except MotionGraphicsError:
+            self._remove_partial(path)
+            raise
+        out_hash = sha256_file(str(path))
+        manifest.write_text(json.dumps({"schema": MANIFEST_SCHEMA, "operation_id": identity, "type": "shape-clip", "parameters": cp, "input_hashes": [],
+                                        "output_hash": out_hash, "output_size": path.stat().st_size, "duration": duration, "tool": "ffmpeg-skill/background",
+                                        "tool_versions": self.tool_versions, "skill": SKILL_ID, "skill_version": VERSION}, indent=2, sort_keys=True), encoding="utf-8")
+        record.update(status="rendered", output_hash=out_hash, seconds=run.seconds, tool_commands_observed=run.commands)
+        return {"path": str(path), "record": record}
 
     # ---- reuse
     def _reusable(self, identity: str, out_path: Path, manifest_path: Path) -> bool:

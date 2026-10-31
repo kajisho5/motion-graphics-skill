@@ -8,7 +8,8 @@ from typing import Any, Dict, List
 
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
 from .colors import NAMED_COLORS
-from .adapter import FLAG_ALTERNATIVES, FLAGS_USED, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS, TEMPLATE_FLAGS, TOOLS_USED
+from .adapter import (FLAG_ALTERNATIVES, FLAGS_USED, GENERATOR_OPTIONAL_FLAGS, GENERATOR_TOOLS, KNOWN_CONTRACT_VERSION, OPTIONAL_FLAGS, REQUIRED_FLAGS,
+                      TEMPLATE_FLAGS, TOOLS_USED)
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
@@ -40,6 +41,7 @@ CAPABILITY_IDS: Dict[str, str] = {
     "bug": "motion_graphics.bug", "chapter": "motion_graphics.chapter", "progress": "motion_graphics.progress",
     "countdown": "motion_graphics.countdown", "video_overlay": "motion_graphics.video_overlay",
     "sticker": "motion_graphics.sticker", "hook": "motion_graphics.hook", "meme": "motion_graphics.meme",
+    "shape": "motion_graphics.shape",
 }
 
 
@@ -55,11 +57,11 @@ FFMPEG_SKILL_CONTRACT_RANGE = f">={KNOWN_CONTRACT_VERSION} <{int(KNOWN_CONTRACT_
 
 def dependencies() -> List[Dict[str, Any]]:
     return [{"skill_id": "ffmpeg-skill", "version_range": FFMPEG_SKILL_CONTRACT_RANGE, "range_of": "contract_version", "required": True,
-             "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]}]
+             "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED + tuple(GENERATOR_TOOLS)]}]
 
 
 def _param_schema(ps: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: v for k, v in ps.items() if k in ("type", "required", "min", "max", "enum", "default", "description", "max_length", "alpha")}
+    return {k: v for k, v in ps.items() if k in ("type", "required", "min", "max", "enum", "default", "description", "max_length", "alpha", "multiple_of")}
 
 
 def element_type_specs() -> List[Dict[str, Any]]:
@@ -72,6 +74,9 @@ def element_type_specs() -> List[Dict[str, Any]]:
         }
         if spec.get("at_least_one_of"):
             entry["constraints"] = [{"at_least_one_of": list(spec["at_least_one_of"])}]
+        if spec.get("generator"):
+            # ADR-22: the second ffmpeg-skill call of this element's stage (it generates the layer `tool` composites)
+            entry["generator"] = f"ffmpeg-skill/{spec['generator']}"
         out.append(entry)
     return out
 
@@ -84,22 +89,25 @@ def animation_specs() -> List[Dict[str, Any]]:
 def skill_contract() -> Dict[str, Any]:
     tools = [{"tool_id": f"{SKILL_ID}/run", "skill_id": SKILL_ID, "version": VERSION, "role": "execution",
               "description": "Render a typed Graphics Document (titles, lower thirds, text overlays, image/logo overlays, video-on-video "
-                              "picture-in-picture/chroma-key overlays, with fade animation) onto a video and write a validated artifact with provenance",
+                              "picture-in-picture/chroma-key overlays, solid-colour rectangles, with fade animation) onto a video and write a validated "
+                              "artifact with provenance",
               "inputs": ["request document (stdin)"], "input_type": REQUEST_SCHEMA_ID, "produces_output": True, "writes_media": True, "deterministic": True,
               "idempotency_hint": "content_equivalent; non-final intermediates reused by deterministic operation id",
               "element_types": sorted(ELEMENT_TYPES), "supports": {"dry_run": True, "timeout": True, "cancel": True, "validate": True},
               "verification": "every artifact is probed (video stream, resolution, duration, sha256); the final output is always re-validated even when intermediates were reused",
-              "provenance": "OBSERVED", "mutates_input": False, "delegates_to": [f"ffmpeg-skill/{t}" for t in TOOLS_USED]}]
+              "provenance": "OBSERVED", "mutates_input": False,
+              "delegates_to": [f"ffmpeg-skill/{t}" for t in TOOLS_USED + tuple(GENERATOR_TOOLS)]}]
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
         "contract_version": CONTRACT_SCHEMA_VERSION, "kind": "execution", "role": "motion graphics rendering (execution); not design, not decision",
         "description": "Deterministic motion-graphics rendering execution: title cards, lower thirds, free-form text overlays, image/logo overlays, "
-                       "and video-on-video picture-in-picture/chroma-key overlays, with built-in template animation (title/lower-third fade and slide) "
+                       "video-on-video picture-in-picture/chroma-key overlays, and solid-colour rectangles (shape), with built-in template animation (title/lower-third fade and slide) "
                        "or a configurable linear fade (text/image overlays only); typed Graphics Document in, a validated video artifact with "
                        "provenance out. Not an AI agent: it never chooses what to show, when to show it, or how it should look.",
         "repository": "https://github.com/kajisho5/motion-graphics-skill",
         "not_provided": ["AI reasoning", "design decisions", "production plans", "template or content selection", "arbitrary ffmpeg filters",
-                         "shape elements (not implemented yet, see unsupported_element_types)", "position/scale animation (see unsupported_animations)",
+                         "shapes other than a solid rectangle (rounded corners, borders, rotation, gradients; ADR-22)",
+                         "position/scale animation (see unsupported_animations)",
                          "video editing (video-editing-skill)", "color grading (color-grading-skill)", "subtitle generation (subtitle-skill)",
                          "shell execution", "network access"],
         "tools": tools,
@@ -125,7 +133,9 @@ def skill_contract() -> Dict[str, Any]:
                    "alpha": "accepted by a color parameter unless its schema says alpha: false; there, @A is refused before anything renders "
                             "(UNSUPPORTED_OPERATION, details.reason color_alpha_not_supported, details.element_id) -- never sent, never dropped",
                    "delegates": {"ffmpeg-skill/graphics": "RRGGBB only (a name is sent as its RRGGBB; no @alpha, no opacity flag)",
-                                 "ffmpeg-skill/overlay": "name, 0xRRGGBB (a bare RRGGBB gets the 0x prefix) and @alpha, as ffmpeg reads them"}},
+                                 "ffmpeg-skill/overlay": "name, 0xRRGGBB (a bare RRGGBB gets the 0x prefix) and @alpha, as ffmpeg reads them",
+                                 "ffmpeg-skill/background": "shape.color as 0xRRGGBB (a name is converted first); no @alpha: the shape's "
+                                                            "transparency is its opacity parameter (ADR-22)"}},
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
         "fonts": {"registry": {fid: spec["family"] for fid, spec in FONT_REGISTRY.items()}, "default_font_id": DEFAULT_FONT_ID,
                   "custom_font_file": {"allowed_extensions": list(ALLOWED_FONT_EXTENSIONS), "path_policy": True, "provenance": "font_file_hash (sha256)"},
@@ -138,7 +148,8 @@ def skill_contract() -> Dict[str, Any]:
                      "duration_tolerance_seconds": DURATION_TOLERANCE},
         "execution": {"mode": "local", "canonical_invocation": ["motion-graphics", "run", "-", "--json"], "stdin": REQUEST_SCHEMA_ID,
                       "stdout": f"exactly one {SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION} document", "stderr": "diagnostics only",
-                      "executables": ["python3 <ffmpeg-skill>/scripts/{probe,graphics,overlay}.py (argv lists)"],
+                      "executables": ["python3 <ffmpeg-skill>/scripts/{probe,graphics,overlay}.py (argv lists)",
+                                      "python3 <ffmpeg-skill>/scripts/background.py (argv list; shape elements only, ADR-22)"],
                       "executable_resolution": "ffmpeg-skill directory: --ffmpeg-skill, MOTION_GRAPHICS_FFMPEG_SKILL_DIR, VIDEO_AGENT_FFMPEG_SKILL_DIR, ~/.claude/skills/ffmpeg-skill, ./vendor/ffmpeg-skill, ../ffmpeg-skill; ffmpeg/ffprobe: PATH lookup by ffmpeg-skill",
                       "shell": False, "arbitrary_executables": False, "arbitrary_filters": False, "network": False, "input_mutation": False, "ai": False},
         "ffmpeg_skill": {"contract_version": KNOWN_CONTRACT_VERSION,
@@ -152,7 +163,11 @@ def skill_contract() -> Dict[str, Any]:
                          "optional_flags": {k: list(v) for k, v in OPTIONAL_FLAGS.items()},
                          # graphics templates newer than the oldest verified checkout (0.12.5): element types built on them are
                          # reported unsupported by doctor, and refused before rendering, when the checkout lacks the template or flags
-                         "template_requirements": {t: {"graphics_flags": list(f)} for t, f in TEMPLATE_FLAGS.items()}},
+                         "template_requirements": {t: {"graphics_flags": list(f)} for t, f in TEMPLATE_FLAGS.items()},
+                         # ADR-22: tools called for one element type only; detected like a template, never needed to locate a checkout
+                         "generator_tools": {t: {"flags": list(f), "optional_flags": list(GENERATOR_OPTIONAL_FLAGS.get(t, ())),
+                                                 "for": sorted(e for e, s in ELEMENT_TYPES.items() if s.get("generator") == t)}
+                                             for t, f in GENERATOR_TOOLS.items()}},
         "request": {"schema": REQUEST_SCHEMA_ID, "id_pattern": ID_RE.pattern, "forbidden_fields": sorted(FORBIDDEN_KEYS),
                     "shape": {"schema": REQUEST_SCHEMA_ID, "video": {"path": "file"}, "output": {"path": "file", "overwrite?": False},
                               "elements": [{"id": "id", "type": "|".join(sorted(ELEMENT_TYPES)), "start": 0, "end": 1,
@@ -171,7 +186,8 @@ def skill_contract() -> Dict[str, Any]:
                      "failure": {"ok": False, "status": "error|cancelled", "error": {"code": "one of errors.codes", "message": "str", "retryable": "bool", "details": {}},
                                  "note": "the same failure shape for every command (validate/plan/run alike)"}},
         "provenance": {"per_operation": ["operation_id", "type", "tool", "status", "parameters", "input_hashes", "output_hash", "seconds", "tool_commands_observed",
-                                        "dropped_non_av_streams (present, true, only when ffmpeg-skill's own subtitle/data-stream preservation fell back for that stage)"],
+                                        "dropped_non_av_streams (present, true, only when ffmpeg-skill's own subtitle/data-stream preservation fell back for that stage)",
+                                        "derived (shape only: the generated clip -- tool, operation_id, status, output_hash, parameters; ADR-22)"],
                        "per_output": ["document_id", "video (path, sha256, duration, width, height)", "assets (sha256 per element)", "fonts (font_id or font_file_hash per element)", "operations (chain)", "output_hash"],
                        "identity": "sha256 over canonical JSON of {type, parameters (asset/font paths replaced by their sha256), start, end, animation, previous stage identity, tool_versions}; no timestamps, no UUIDs, no absolute paths"},
         "work_dir": f"<workspace>/{WORK_DIR_NAME}/<document_id>/ (non-final intermediates only; the requested output is always written directly and re-validated)",

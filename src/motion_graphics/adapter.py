@@ -20,6 +20,8 @@ Which ffmpeg-skill tools are used, and for what (docs/ffmpeg-skill.md):
   overlay   TEXT_OVERLAY (--text), IMAGE_OVERLAY (--image) and VIDEO_OVERLAY (--video, with optional
             --chromakey/--chromakey-similarity/--chromakey-blend), with position, margin, static scale, opacity
             and (text/image only) a configurable linear --fade in/out
+  background (optional) the solid-colour clip a SHAPE element composites with overlay --video (ADR-22); used only when the
+            checkout has it with GENERATOR_TOOLS' flags, otherwise `shape` is reported unsupported and refused up front
 Every graphics/overlay invocation may also carry --audio-stream (document.options.audio_stream, ffmpeg-skill
 0.12.0) to select which audio track of the source survives, and --platform (document.options.platform) to put each element's
 margin in a destination's safe zone, when the checkout has that flag."""
@@ -74,6 +76,12 @@ OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite", "platfor
 # name in the checkout's `--template` choices AND the flags listed here; the element type is refused up front when the
 # checkout lacks either (never attempted and left to fail inside the tool), and doctor reports it unsupported.
 TEMPLATE_FLAGS: Dict[str, Tuple[str, ...]] = {"sticker": ("text",), "hook": ("duration",), "meme": ("top", "bottom")}
+# ffmpeg-skill tools this adapter calls only for one element type, detected like a template (ADR-22): `background` makes the
+# solid-colour clip of a `shape` element (ffmpeg-skill 0.11.0+). Not needed to locate a checkout or to render any other
+# type; a checkout without it, or without these flags, reports `shape` unsupported and refuses it before rendering.
+# Its encoder flags (--quality/--crf, --overwrite, --preset) are passed when the checkout has them.
+GENERATOR_TOOLS: Dict[str, Tuple[str, ...]] = {"background": ("output", "duration", "width", "height", "color", "json")}
+GENERATOR_OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"background": ("quality", "crf", "preset", "overwrite")}
 # every flag this adapter may emit, for the contract document (`ffmpeg_skill.flags_used`)
 FLAGS_USED: Dict[str, Tuple[str, ...]] = {
     tool: flags + tuple(f for alts in FLAG_ALTERNATIVES.get(tool, {}).values() for f in alts) + OPTIONAL_FLAGS.get(tool, ())
@@ -172,6 +180,10 @@ class SkillInfo:
         names = (self.features.get("platforms") or {}).get(tool)
         return list(names) if isinstance(names, list) else None
 
+    def tool_support(self, tool: str) -> Optional[bool]:
+        """Whether this checkout has the optional generator `tool` (GENERATOR_TOOLS) with every flag this skill sends it."""
+        return (self.features.get("generator_support") or {}).get(tool)
+
     def template_support(self, template: str) -> Optional[bool]:
         """Whether this checkout's graphics tool can render `template`: True / False when detected, None when it cannot be
         told (e.g. a contract that does not list the `--template` choices)."""
@@ -251,8 +263,16 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
                     template_support[name] = None
         if missing:
             problems.append(f"ffmpeg-skill/{tool} lacks flag(s) {missing}")
+    # optional generator tools (ADR-22): never a problem, only a feature; the element type that needs one is refused without it
+    generator_support: Dict[str, bool] = {}
+    generator_flags: Dict[str, Dict[str, Any]] = {}
+    for tool, flags in GENERATOR_TOOLS.items():
+        props = ((tools.get(tool) or {}).get("input_schema") or {}).get("properties") or {}
+        generator_support[tool] = bool(props) and all(f in props for f in flags)
+        generator_flags[tool] = {"encoder_quality": next(("--" + f for f in ("quality", "crf") if f in props), None),
+                                 "overwrite": "overwrite" in props, "preset": "preset" in props}
     return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite, "platform_flag": platform_flag, "platforms": platforms,
-                      "template_support": template_support}
+                      "template_support": template_support, "generator_support": generator_support, "generator_flags": generator_flags}
 
 
 class FfmpegSkill:
@@ -291,7 +311,7 @@ class FfmpegSkill:
                                    {"reason": "ffmpeg_skill_missing", "tried": tried}, retryable=False)
 
     def script(self, tool: str) -> str:
-        if tool not in TOOLS_USED:
+        if tool not in TOOLS_USED and tool not in GENERATOR_TOOLS:
             raise MotionGraphicsError("INTERNAL_ERROR", f"tool {tool!r} is not on the adapter allowlist")
         return str(self.directory / "scripts" / f"{tool}.py")
 
@@ -319,7 +339,9 @@ class FfmpegSkill:
 
     def _tools_from_help(self, timeout: float) -> Dict[str, Dict[str, Any]]:
         tools: Dict[str, Dict[str, Any]] = {}
-        for tool in TOOLS_USED:
+        for tool in TOOLS_USED + tuple(GENERATOR_TOOLS):
+            if tool in GENERATOR_TOOLS and not Path(self.script(tool)).is_file():
+                continue
             try:
                 code, out, _, _ = self._popen([sys.executable, self.script(tool), "--help"], timeout)
             except (MotionGraphicsError, OSError):

@@ -12,7 +12,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import DOCTOR_SCHEMA_VERSION, SKILL_ID, VERSION
-from .adapter import TEMPLATE_FLAGS, FfmpegSkill
+from .adapter import GENERATOR_TOOLS, TEMPLATE_FLAGS, FfmpegSkill
 from .errors import MotionGraphicsError
 from .fonts import FONT_REGISTRY
 from .model import ANIMATION_KINDS, ELEMENT_TYPES, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES
@@ -50,6 +50,10 @@ def capability_status(skill_info: Optional[Any], ffdoc: Dict[str, Any]) -> Dict[
     for template in TEMPLATE_FLAGS:
         found = skill_info.template_support(template) if skill_info is not None and have_skill else False
         status[f"graphics-template:{template}"] = "unknown" if found is None else ("supported" if found else "unsupported")
+    # optional generator tools (ADR-22: background, for shape): detected from the checkout's contract / --help, like templates
+    for tool in GENERATOR_TOOLS:
+        found = skill_info.tool_support(tool) if skill_info is not None and have_skill else False
+        status[f"ffmpeg-skill-tool:{tool}"] = "unknown" if found is None else ("supported" if found else "unsupported")
     if have_skill and ffdoc.get("_unavailable"):
         # this ffmpeg-skill has no doctor to ask: nothing detected either way; output validation reports the truth per run
         for cap in ["ffmpeg", "ffprobe", *CORE_CAPABILITIES]:
@@ -93,6 +97,8 @@ def element_type_status(caps: Dict[str, str]) -> Dict[str, Any]:
         st = "unsupported" if any(caps.get(c) == "unsupported" for c in need) else ("unknown" if any(caps.get(c) == "unknown" for c in need) else "supported")
         element_types[etype] = {"status": st, "tool": f"ffmpeg-skill/{spec['tool']}", "required_capabilities": need,
                                 "missing": [c for c in need if caps.get(c) == "unsupported"], "unknown": [c for c in need if caps.get(c) == "unknown"]}
+        if spec.get("generator"):
+            element_types[etype]["generator"] = f"ffmpeg-skill/{spec['generator']}"
     return element_types
 
 

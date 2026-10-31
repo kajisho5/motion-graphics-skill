@@ -102,6 +102,11 @@ def meme_element(element_id="meme1", start=0.0, end=3.0, **extra):
     return {"id": element_id, "type": "meme", "start": start, "end": end, "parameters": {**extra}}
 
 
+def shape_element(element_id="box1", start=0.0, end=2.0, width=160, height=60, color="navy", **extra):
+    return {"id": element_id, "type": "shape", "start": start, "end": end,
+            "parameters": {"width": width, "height": height, "color": color, **extra}}
+
+
 def run_cli(args, stdin_text=None, cwd=None):
     """Run the CLI in a subprocess (the real process boundary) and return (exit, stdout, stderr)."""
     import subprocess
