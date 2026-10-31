@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.7 — 2026-10-31
+
+- shape element: a solid rectangle via ffmpeg-skill background + overlay --video, two calls in one stage (roadmap step 4) (#33) (cf4990d)
+
 ## v0.2.6 — 2026-10-31
 
 - Single-source the version: importlib.metadata fallback and a release-bump self-check (roadmap step 1) (#32) (db2a066)
