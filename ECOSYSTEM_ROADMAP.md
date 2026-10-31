@@ -21,7 +21,7 @@ Agent accepts only 0.1.x and exposes title, lower_third, text_overlay, image_ove
 
 ## Steps
 
-- [ ] **1. Single-source the version** — VERSION from package metadata; release script covers it; coordinate with the agent's version gate
+- [x] **1. Single-source the version** — VERSION from package metadata; release script covers it; coordinate with the agent's version gate — [#28](https://github.com/kajisho5/motion-graphics-skill/pull/28), [#32](https://github.com/kajisho5/motion-graphics-skill/pull/32)
   - Done when: contract version == pyproject; test
 - [x] **2. Distinct provides ids** — text_overlay and image_overlay both map to motion_graphics.overlay
   - Done when: no duplicate ids
