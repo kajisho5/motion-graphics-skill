@@ -551,3 +551,32 @@ parameter's schema says `alpha: false` rather than by engine tool name. That is 
   per-parameter `alpha: false` and its `colors` table.
 - Full suite 473 passed against ffmpeg-skill 2.21.0 (`main`) and against 0.12.5 (`87c84f2`, where `sticker`/`hook` take the documented
   refusal path).
+
+## ADR-21: the version lives only in pyproject.toml; installed copies read it through importlib.metadata
+
+**Problem**: #28 made `motion_graphics.VERSION` read this checkout's `pyproject.toml` (the only file `release.yml` bumps) instead
+of a hard-coded `"0.1.0"`, but the installed-copy fallback globbed `motion_graphics_skill-*.dist-info/METADATA` over `sys.path`
+itself. That takes the first match in path order and, inside one directory, in *lexicographic* order, so two leftover
+dist-info directories report the wrong one (`0.10.0` sorts before `0.9.0`), and it does not see metadata importers other than plain
+directories. Nothing asserted that the contract equals `pyproject.toml`, only that it equals `VERSION`, and nothing proved that the
+release workflow's bump moves every reported version.
+
+**Decision**:
+
+- **One source: `pyproject.toml`.** `_version()` reads the `version` line of this checkout's `pyproject.toml` (only if its `name` is
+  `motion-graphics-skill`) when running from source, which includes an editable install whose recorded metadata goes stale on the
+  next bump. Otherwise it asks `importlib.metadata.version("motion-graphics-skill")`, i.e. the installed wheel's metadata, built from
+  that same file. If neither exists it reports `0.0.0+unknown`, never a plausible but wrong number. This is the same rule, in the same
+  shape, as qc-skill (its ADR-020); subtitle-skill and thumbnail-skill take the same shape in their own roadmap step 1.
+- **The release bump stays one write.** `.github/scripts/bump_version.py` still rewrites only `pyproject.toml`; after writing it imports
+  the package from `src/` and fails the release (before anything is committed or tagged) unless `VERSION`, the contract's `version` and
+  its tool spec's `version` all equal `NEW_VERSION`. This repository commits no contract snapshot, so there is nothing to regenerate.
+- **Not chosen: have the release also bump a constant** (audio-production-skill's `bump_version_files.sh` writes both
+  `pyproject.toml` and `VERSION = "..."`). Two copies stay correct only while a second regex write keeps matching; one copy cannot drift.
+- **Guarded by tests** (`tests/test_version_source.py`): `VERSION`, `skill_contract()["version"]`, every tool spec's `version` and the
+  CLI's `contract --json` / `skill --json` / `--version` equal `pyproject.toml`; `bump_version.py` run on a copy of the checkout moves all
+  of them; a copy without `pyproject.toml` reads a dist-info's `Version`, and with none reports `0.0.0+unknown`.
+
+**Effect on callers**: none. `contract --json` is byte-identical before and after (it already reported `0.2.5`); `contract_version` and
+`dependencies` are unchanged. video-production-agent gates on `SUPPORTED_SKILL_VERSIONS = ("0.1.", "0.2.")`, so this ships as a patch
+release (no `feature` label) to stay inside it.
