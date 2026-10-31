@@ -648,5 +648,7 @@ available. `check_contract()` itself passes: every parameter type is one it know
 
 **Verified** on ffmpeg-skill 2.21.0 (main) and 0.12.5 (`87c84f2`, the oldest verified checkout, which already has
 `background.py` with these flags). `tests/test_shape.py` renders a white 100x60 rectangle at the top-left in [1, 3] s
-and measures the luma inside it (white), away from it and outside its window (the source, unchanged). It also checks
-that opacity 0.5 changes the pixels less than an opaque rectangle, and that the clip is reused.
+and compares it with the same render at opacity 0. That reference carries whatever colour handling ffmpeg-skill/overlay
+applies to the whole picture, which differs between FFmpeg releases (a CI run showed it). Inside the rectangle, while it
+is up, the picture is white; away from it and outside its window it is unchanged. The test also checks that opacity
+0.5 changes the pixels less than an opaque rectangle, and that the clip is reused.

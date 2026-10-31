@@ -203,18 +203,26 @@ def test_contract_declares_shape_with_its_generator():
 
 
 # ---- real renders (ffmpeg-skill + ffmpeg)
+def _render(skill_dir, workspace, output, **params):
+    resp = _executor(skill_dir, workspace).response(request_doc([shape_element(**params)], output=output))
+    assert resp["ok"] is True, resp
+    return resp
+
+
 def test_shape_draws_a_rectangle_at_its_position_in_its_window(skill_dir, workspace):
-    ex = _executor(skill_dir, workspace)
-    resp = ex.response(request_doc([shape_element(width=100, height=60, color="white", position="top-left", margin=0, start=1, end=3)],
-                                    output="out/shape.mp4"))
-    assert resp["ok"] is True
-    out, source = resp["output"]["path"], str(workspace / "video.mp4")
+    box = dict(width=100, height=60, color="white", position="top-left", margin=0, start=1, end=3)
+    resp = _render(skill_dir, workspace, "out/shape.mp4", **box)
+    # the same pipeline with an invisible rectangle (opacity 0) is the reference: whatever colour handling ffmpeg-skill/overlay
+    # applies to the whole picture (it differs between FFmpeg releases) is in both, so only the rectangle itself differs
+    ref = _render(skill_dir, workspace, "out/reference.mp4", **dict(box, opacity=0.0))["output"]["path"]
+    out = resp["output"]["path"]
     meta = _probe(skill_dir, out)
     assert (meta["video"]["width"], meta["video"]["height"]) == (320, 180) and abs(meta["duration"] - 6.0) < 0.3
     assert _luma(out, 2.0, "80:40:10:10") > 200                           # inside the rectangle, while it is up: white
-    assert _luma_diff(out, source, 2.0, "60:40:200:120") < 3.0             # away from it: the source, untouched
-    assert _luma_diff(out, source, 0.5, "80:40:10:10") < 3.0               # before its window: the source
-    assert _luma_diff(out, source, 4.0, "80:40:10:10") < 3.0               # after it
+    assert _luma_diff(out, ref, 2.0, "80:40:10:10") > 30                   # ...and different from the picture without it
+    assert _luma_diff(out, ref, 2.0, "60:40:200:120") < 3.0                # away from it: untouched
+    assert _luma_diff(out, ref, 0.5, "80:40:10:10") < 3.0                  # before its window
+    assert _luma_diff(out, ref, 4.0, "80:40:10:10") < 3.0                  # after it
     op = resp["operations"][0]
     assert op["tool"] == "ffmpeg-skill/overlay" and op["derived"][0]["tool"] == "ffmpeg-skill/background"
     assert op["derived"][0]["status"] == "rendered" and op["parameters"]["clip"] == op["derived"][0]["operation_id"]
@@ -222,13 +230,12 @@ def test_shape_draws_a_rectangle_at_its_position_in_its_window(skill_dir, worksp
 
 
 def test_shape_opacity_lets_the_video_show_through(skill_dir, workspace):
-    ex = _executor(skill_dir, workspace)
-    solid = ex.response(request_doc([shape_element(width=100, height=60, color="black", position="top-left", margin=0)], output="out/solid.mp4"))
-    half = _executor(skill_dir, workspace).response(request_doc([shape_element(width=100, height=60, color="black", position="top-left", margin=0, opacity=0.5)],
-                                                                output="out/half.mp4"))
-    source = str(workspace / "video.mp4")
-    d_solid = _luma_diff(solid["output"]["path"], source, 1.0, "80:40:10:10")
-    d_half = _luma_diff(half["output"]["path"], source, 1.0, "80:40:10:10")
+    box = dict(width=100, height=60, color="black", position="top-left", margin=0)
+    ref = _render(skill_dir, workspace, "out/ref.mp4", **dict(box, opacity=0.0))["output"]["path"]
+    solid = _render(skill_dir, workspace, "out/solid.mp4", **box)["output"]["path"]
+    half = _render(skill_dir, workspace, "out/half.mp4", **dict(box, opacity=0.5))["output"]["path"]
+    d_solid = _luma_diff(solid, ref, 1.0, "80:40:10:10")
+    d_half = _luma_diff(half, ref, 1.0, "80:40:10:10")
     assert d_solid > d_half > 3.0, (d_solid, d_half)
 
 
