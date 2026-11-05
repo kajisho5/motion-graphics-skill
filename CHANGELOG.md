@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.9 — 2026-11-05
+
+- docs(roadmap): bring status and wiring up to date (2026-11-05 review) (#35) (b9f800d)
+
 ## v0.2.8 — 2026-10-31
 
 - fix: accept ffmpeg-skill 3.0.0 (contract_version 2.0); Python 3.9 CI on the last 2.x (#34) (0646a29)
