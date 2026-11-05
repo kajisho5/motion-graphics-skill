@@ -17,7 +17,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Wiring
 
-Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 contract (video-production-agent#82, ADR-064), and `shape` (#93). Delegates to ffmpeg-skill probe, graphics, overlay.
+Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 contract (video-production-agent#82, ADR-064), and `shape` (video-production-agent#93). Delegates to ffmpeg-skill probe, graphics, overlay.
 
 ## Steps
 
