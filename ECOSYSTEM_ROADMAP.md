@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-pyproject v0.2.0 but `VERSION` in `__init__` is 0.1.0, so the contract reports 0.1.0. 12 elements (title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme); `shape` (a solid rectangle, two ffmpeg-skill calls in one stage) added by [#33](https://github.com/kajisho5/motion-graphics-skill/pull/33). 241 tests, CI on 3 OSes.
+0.2.8, version single-sourced (step 1). 12 elements (title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme); `shape` (a solid rectangle, two ffmpeg-skill calls in one stage) added by [#33](https://github.com/kajisho5/motion-graphics-skill/pull/33). 241 tests, CI on 3 OSes.
 
 ## What this repository owns
 
@@ -17,7 +17,7 @@ pyproject v0.2.0 but `VERSION` in `__init__` is 0.1.0, so the contract reports 0
 
 ## Wiring
 
-Agent accepts only 0.1.x and exposes title, lower_third, text_overlay, image_overlay; the other 8 elements are unreachable. Delegates to ffmpeg-skill probe, graphics, overlay.
+Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 contract (video-production-agent#82, ADR-064), and `shape` (#93). Delegates to ffmpeg-skill probe, graphics, overlay.
 
 ## Steps
 
@@ -37,4 +37,4 @@ Agent accepts only 0.1.x and exposes title, lower_third, text_overlay, image_ove
 video_overlay (PiP) overlaps ffmpeg-skill's Bロール・画面合成; titles also exist in hyperframes / remotion templates and ffmpeg-skill graphics. ecosystem.json keeps タイトル・テロップ here.
 
 ---
-Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (42 tools, treated as complete). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
+Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (3.x, 42 tools, contract_version 2.0; treated as complete, proposals go to Velisa's ROADMAP). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
