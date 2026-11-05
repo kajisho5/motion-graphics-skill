@@ -41,12 +41,12 @@ Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 con
   - なぜ要るか：テロップだけ差し替えたい・NLE で組み直したいという納品後の修正に、再レンダーなしで応えられる
   - Needs: ffmpeg-skill alpha masters (Velisa ROADMAP proposal 5, accepted: [ffmpeg-skill#417](https://github.com/kajisho5/ffmpeg-skill/issues/417)) for ProRes 4444 / PNG sequence output
   - Done when: the layers composited over the clean programme equal the burned programme within a stated PSNR
-- [ ] **9. Japanese name fit for lower thirds** — `lower_third` / `title` text that does not fit its box is shrunk down to a stated minimum and broken at phrase boundaries (BudouX, Apache-2.0) with subtitle-skill's kinsoku rules; the size used and the break are reported, the text is never cut. A CSV of names and affiliations renders one element per row
-  - なぜ要るか：「登壇者テロップを10人分、CSV から」で、長い所属や氏名もはみ出さずに揃う
-  - Done when: a 10-row CSV fixture with a 40-character affiliation renders 10 lower thirds within the box, no line starting with a closing bracket
-- [ ] **10. End-screen and card areas (YouTube)** — an `end_screen` layout that reserves the regions YouTube's end-screen elements use in the last 5-20 s and keeps every other element out of them (a stated layout per aspect), and a check that reports a graphic overlapping a reserved region
-  - なぜ要るか：終了画面の要素とテロップが重なる事故を、書き出し前に防げる
-  - Done when: a fixture places a title in the reserved region during the end screen and gets the overlap reported
+- [ ] **9. Name fit for lower thirds, any language** — `lower_third` / `title` text that does not fit its box is shrunk down to a stated minimum and broken at the language's own break opportunities (Unicode UAX #14; phrase breaks with BudouX, Apache-2.0, where it supports the language), right-to-left text laid out by its direction; the size used and the break are reported, the text is never cut. Regional rules are opt-in profiles, for example Japanese kinsoku from subtitle-skill's locale profiles. A CSV of names and affiliations renders one element per row
+  - Why: "lower thirds for 10 speakers from this CSV" fits long names and affiliations in any language（なぜ要るか：長い氏名・所属も多言語ではみ出さずに揃う）
+  - Done when: a 10-row CSV fixture with English, Arabic and Japanese rows, one with a 40-character affiliation, renders 10 lower thirds within the box; the Japanese row with the kinsoku profile has no line starting with a closing bracket
+- [ ] **10. End-screen and card areas (YouTube)** — YouTube Studio lets the editor move end-screen elements, so the reserved regions are an input: the intended element positions for the last 5-20 s (or one of the stated default layouts per aspect, which the editor then reproduces in Studio, written in the result). Card teasers are covered the same way: each card's teaser time and its reserved area (top-right by default, as an input). Every other element is kept out of those regions at those times, and a graphic that overlaps one is reported
+  - Why: end-screen elements and card teasers never cover a title or a lower third（なぜ要るか：終了画面やカードとテロップが重なる事故を書き出し前に防げる）
+  - Done when: a fixture places a title under an end-screen element during the end screen and another under a card teaser at its time, and both overlaps are reported; with element positions given as input, the check uses those positions
 
 ## Boundaries
 
