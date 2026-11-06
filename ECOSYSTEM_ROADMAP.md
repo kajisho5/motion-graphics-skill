@@ -52,6 +52,10 @@ Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 con
   - Why: end-screen elements and card teasers never cover a title or a lower third（なぜ要るか：終了画面やカードとテロップが重なる事故を書き出し前に防げる）
   - Done when: a fixture places a title under an end-screen element during the end screen and another under a card teaser at its time, and both overlaps are reported; with element positions given as input, the check uses those positions
   - Done (ADR-28): `options.reserved_regions` (end screen 5-20 s with input positions or a stated default layout per aspect; cards with teaser time and area, top-right by default; `on_overlap` report or refuse); `tests/test_reserved_regions.py` reports the title under the end screen and the one under a card teaser, and uses input positions when given. Element boxes are exact for shapes and sized assets, estimated for templates (stated per overlap)
+- [x] **11. Brand themes** — colours (primary, secondary, background, text), font, logo and spacing in one theme file (JSON), applied at once to lower thirds, titles, end cards and the other elements; several themes per request, one chosen; colour pairs with too little contrast are warned
+  - なぜ要るか：ブランドごとの配色・書体・ロゴ・余白を毎回並べずに、テーマを切り替えるだけで全テロップに反映できる
+  - Done when: two themes render the same template, and each element's colours and fonts match its theme, checked on the pixels / metadata; a low-contrast theme warns
+  - Done (ADR-29): `options.themes` / `options.theme`, the `logo` element type, the theme font on every graphics template, the contrast report (`response.theme.contrast`, `theme-check`); `tests/test_themes.py` renders one document with two themes and reads each element's colours from the pixels and its font from ffmpeg-skill's report, and a low-contrast theme warns
 
 ## Boundaries
 
