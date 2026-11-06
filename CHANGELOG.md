@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.11 — 2026-11-06
+
+- Add named style presets and a brand kit (roadmap step 6) (#37) (200a45b)
+
 ## v0.2.10 — 2026-11-06
 
 - docs(roadmap): field review steps (2026-11-05) (#36) (6aef950)
