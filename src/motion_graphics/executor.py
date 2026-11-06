@@ -26,6 +26,7 @@ from .fonts import ResolvedFont, resolve_font
 from .layers import has_alpha, layer_placements, place_args
 from .regions import element_boxes, overlaps, resolve_regions
 from .textfit import fit as fit_text
+from .themes import load_theme, warnings_for
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
 from .security import PathPolicy
 
@@ -59,6 +60,8 @@ class StageResult:
     # ADR-22: a shape element's generated clip -- {tool, operation_id, status, output_hash, parameters, seconds,
     # tool_commands_observed}; None for every other element type
     derived: Optional[List[Dict[str, Any]]] = None
+    # ADR-29: the font ffmpeg-skill reports it drew with (its `font_used`: family, file name, how it was found), when it reports one
+    font_used: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = {"index": self.index, "element_id": self.element_id, "type": self.type, "tool": f"ffmpeg-skill/{self.tool}",
@@ -69,6 +72,8 @@ class StageResult:
             d["dropped_non_av_streams"] = self.dropped_non_av_streams
         if self.derived is not None:
             d["derived"] = self.derived
+        if self.font_used is not None:
+            d["font_used"] = self.font_used
         return d
 
 
@@ -81,6 +86,17 @@ def _overlay_color(value: str) -> str:
     the value straight to ffmpeg, which reads 0xRRGGBB the same way. So a bare hex value gets the 0x prefix, which
     every version accepts with the same meaning; a colour name is passed unchanged."""
     return "0x" + value if _BARE_HEX_RE.match(value) else value
+
+
+def _font_used(data: Any) -> Optional[Dict[str, Any]]:
+    """ffmpeg-skill's `font_used` (graphics, overlay --text) without its absolute path: family, file name, how it was resolved."""
+    fu = data.get("font_used") if isinstance(data, dict) else None
+    if not isinstance(fu, dict):
+        return None
+    out = {k: fu[k] for k in ("family", "asked", "how", "substituted", "via") if k in fu}
+    if isinstance(fu.get("file"), str):
+        out["file"] = os.path.basename(fu["file"])
+    return out
 
 
 class Executor:
@@ -98,6 +114,13 @@ class Executor:
     # ---- public entry point
     def response(self, document: Any) -> Dict[str, Any]:
         doc = parse_request(document)
+        theme: Optional[Dict[str, Any]] = None
+        if doc.options.get("themes"):
+            # ADR-29: the active theme file is read (PathPolicy) and the document parsed again with it applied
+            opts = doc.options["themes"]
+            theme = load_theme(self.policy, opts["themes"][opts["theme"]], f"document.options.themes.{opts['theme']}")
+            theme["label"] = opts["theme"]
+            doc = parse_request(document, theme)
         video_path = self.policy.resolve_input(doc.video_path, "video")
         output_path = self.policy.resolve_write_path(doc.output_path, "output")
         if output_path == video_path:
@@ -144,6 +167,19 @@ class Executor:
                                                {"element_id": el.element_id, "path": str(video_overlay_path)})
                 resolved_assets[el.element_id] = {"path": str(video_overlay_path), "sha256": sha256_file(str(video_overlay_path)), "size": video_overlay_path.stat().st_size,
                                                   "dims": (int(pip_meta["video"].get("width") or 0), int(pip_meta["video"].get("height") or 0))}
+            if el.type == "logo":
+                if theme is None or not theme.get("logo"):
+                    raise MotionGraphicsError("INVALID_REQUEST", f"elements[{el.element_id}]: a logo element draws the active theme's logo, and "
+                                              + ("no theme is set (options.themes / options.theme)" if theme is None else f"theme {theme['label']!r} has no logo"),
+                                              {"element_id": el.element_id, "reason": "theme_without_logo"})
+                logo_path = Path(theme["logo"]["path"])
+                if logo_path.suffix.lower() not in IMAGE_EXTENSIONS:
+                    raise MotionGraphicsError("UNSUPPORTED_FORMAT", f"theme {theme['label']!r}: logo.path must be one of {IMAGE_EXTENSIONS}: {logo_path.suffix}",
+                                              {"element_id": el.element_id, "extension": logo_path.suffix})
+                resolved_assets[el.element_id] = {"path": str(logo_path), "sha256": sha256_file(str(logo_path)), "size": logo_path.stat().st_size}
+            if theme is not None and theme.get("font") and ELEMENT_TYPES[el.type]["tool"] == "graphics":
+                # the theme's font, for every graphics template (ffmpeg-skill/graphics --font / --font-file)
+                resolved_fonts[el.element_id] = resolve_font(theme["font"], self.policy)
             if el.type == "rendered_layer":
                 # ADR-25: the layer must decode with alpha; its duration decides where the IN / LOOP / OUT pieces go
                 layer_path = self.policy.resolve_input(el.parameters["video_path"], f"elements[{el.element_id}].parameters.video_path")
@@ -181,7 +217,8 @@ class Executor:
                     "plan": {"document_id": document_id, "video": {"path": str(video_path), "sha256": video_hash, "duration": duration, "width": width, "height": height},
                              "output": {"path": str(output_path)}, "timeline": timeline},
                     **({"reserved_regions": reserved} if reserved else {}),
-                    "warnings": self._region_warnings(reserved)}
+                    **({"theme": self._theme_record(theme)} if theme else {}),
+                    "warnings": (warnings_for(theme) if theme else []) + self._region_warnings(reserved)}
 
         # A single-element document never has a non-final stage, so it never needs (or creates) the cache
         # directory at all -- it renders straight into the requested output (ADR-5, docs/decisions.md).
@@ -261,10 +298,10 @@ class Executor:
                                                       "duration": artifact_meta["duration"], "tool": f"ffmpeg-skill/{tool}", "tool_versions": self.tool_versions,
                                                       "skill": SKILL_ID, "skill_version": VERSION}, indent=2, sort_keys=True), encoding="utf-8")
             results.append(StageResult(i, el.element_id, el.type, tool, "rendered", identity, identity_input, [prev_identity], out_hash, str(target),
-                                        run.seconds, run.commands, run.dropped_non_av_streams, derived))
+                                        run.seconds, run.commands, run.dropped_non_av_streams, derived, _font_used(run.data)))
             stage_input, prev_identity, prev_duration = str(target), identity, artifact_meta["duration"]
 
-        warnings: List[str] = self._region_warnings(reserved)
+        warnings: List[str] = (warnings_for(theme) if theme else []) + self._region_warnings(reserved)
         for eid, f in fits.items():
             if not f["fits"]:
                 warnings.append(f"elements[{eid}]: the text needs more than fit.max_lines lines even at the smallest scale ({f['scale']:g}); "
@@ -294,6 +331,7 @@ class Executor:
                 "output_hash": final_meta["sha256"],
             },
             **({"reserved_regions": reserved} if reserved else {}),
+            **({"theme": self._theme_record(theme)} if theme else {}),
             "warnings": warnings,
         }
 
@@ -362,6 +400,8 @@ class Executor:
             params["image_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
         if "video_path" in params and asset is not None:
             params["video_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
+        if el.type == "logo" and asset is not None:
+            params["logo"] = {"sha256": asset["sha256"], "size": asset["size"]}
         if asset is not None and "segments" in asset:
             params["segments"] = asset["segments"]  # rendered_layer: where its pieces go (ADR-25), part of the identity
         if font is not None:
@@ -434,7 +474,15 @@ class Executor:
                 argv += ["--scale", f"{fit['scale']:g}"]
                 if el.fit and el.fit.get("lang"):
                     argv += ["--lang", el.fit["lang"]]
-            return "graphics", argv, None
+            cwd_g: Optional[str] = None
+            if font is not None:  # a theme's font (ADR-29); the same cwd-relative font file as text_overlay's (see below)
+                if font.kind == "system":
+                    argv += ["--font", font.engine_arg["font"]]
+                else:
+                    assert font.font_file_path is not None
+                    argv += ["--font-file", Path(font.font_file_path).name]
+                    cwd_g = str(Path(font.font_file_path).parent)
+            return "graphics", argv, cwd_g
 
         argv = [stage_input, "-o", stage_output, "--position", p["position"]]
         if "margin" in p:  # absent only under document.options.platform with no explicit margin: the safe zone applies
@@ -474,7 +522,7 @@ class Executor:
             # the generated rectangle clip (ADR-22), composited at its own size: no --scale, no chroma key
             assert asset is not None
             argv += ["--video", asset["path"]]
-        elif el.type == "image_overlay":
+        elif el.type in ("image_overlay", "logo"):
             assert asset is not None
             argv += ["--image", asset["path"]]
             if p.get("scale_width"):
@@ -526,6 +574,15 @@ class Executor:
                                       + ", ".join(f"{o['element_id']} under {o['region']['kind']} {o['region']['id']} at {o['time'][0]:g}-{o['time'][1]:g}s" for o in found),
                                       {"reason": "reserved_region_overlap", "overlaps": found, "regions": report["regions"]})
         return report
+
+    @staticmethod
+    def _theme_record(theme: Dict[str, Any]) -> Dict[str, Any]:
+        """The active theme as applied: no absolute path (a font file and the logo are named by their sha256 in provenance)."""
+        font = theme.get("font") or None
+        return {"label": theme["label"], "name": theme.get("name"), "file": theme["file"], "colors": dict(theme["colors"]),
+                "font": ({"font_id": font["font_id"]} if font and "font_id" in font else ({"font_file": Path(font["font_file"]).name} if font else None)),
+                "logo": ({k: v for k, v in theme["logo"].items() if k != "path"} if theme.get("logo") else None),
+                "margin": theme.get("margin"), "base_style": theme.get("base_style"), "contrast": theme["contrast"]}
 
     @staticmethod
     def _region_warnings(reserved: Optional[Dict[str, Any]]) -> List[str]:

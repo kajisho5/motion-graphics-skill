@@ -192,6 +192,23 @@ parameters the request left out (colours, `font`, `box`, `box_color`, `border_wi
 element reports what was filled (`style.applied`). `contract --json` lists every preset and what each element type takes
 from it (`style_presets`). See ADR-24.
 
+## Brand themes
+
+A theme file holds a brand's colours (primary, secondary, background, text), font, logo and spacing:
+
+```json
+{"schema": "motion-graphics/theme@1", "name": "acme",
+ "colors": {"primary": "0B5FFF", "secondary": "00A3E0", "background": "0F1C2E", "text": "FFFFFF"},
+ "font": {"font_file": "fonts/Brand.ttf"}, "logo": {"path": "logo.png", "position": "top-right", "scale_width": 160},
+ "spacing": {"margin": 40}, "base_style": "corporate"}
+```
+
+`options.themes` names the files a request may use and `options.theme` picks one; changing that name re-themes every
+element. Colours, margin and font go to every element type that takes them (the graphics templates get the font through
+ffmpeg-skill `--font` / `--font-file`), the `logo` element draws the theme's logo, and an explicit parameter still wins.
+Colour pairs with too little contrast are warned (`response.theme.contrast`); `motion-graphics theme-check theme.json --json`
+checks a file alone. See ADR-29.
+
 ## Platform safe zones
 
 `options.platform` (`broadcast`, `facebook`, `instagram`, `linkedin`, `podcast`, `reels`, `shorts`, `tiktok`, `twitter`,

@@ -77,6 +77,7 @@ STYLE_TARGETS: Dict[str, Dict[str, str]] = {
     "video_overlay": {"margin": "margin"},
     "shape": {"margin": "margin"},
     "rendered_layer": {"margin": "margin"},
+    "logo": {"margin": "margin"},
 }
 
 BRAND_KIT_FIELDS = ROLES
@@ -126,15 +127,22 @@ def resolve_roles(preset: Optional[str], kit: Optional[Dict[str, str]]) -> Dict[
 
 
 def style_values(etype: str, preset: Optional[str], kit: Optional[Dict[str, str]], given: Dict[str, Any],
-                 has_animation: bool, platform_set: bool) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], Dict[str, str]]:
+                 has_animation: bool, platform_set: bool, kit_label: str = "brand_kit",
+                 settings: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], Dict[str, str]]:
     """The raw parameter values a preset (and brand kit) supplies for one element, for the parameters the request left out.
 
     Returns (parameters, animation-or-None, sources) where sources maps each filled parameter (and "animation") to
     "preset" or "brand_kit". Values are in request form, so they go through the same validation as a caller's own.
     A margin is not supplied when document.options.platform is set: there an omitted margin is the destination's safe zone,
-    which a preset must not override. With a kit and no preset, only role colours are supplied."""
-    targets = STYLE_TARGETS.get(etype, {})
-    roles = resolve_roles(preset, kit)
+    which a preset must not override. With a kit and no preset, only role colours are supplied.
+
+    `settings` are a theme's own values (ADR-29): {"margin": int, "font": {font_id|font_file}, plus per-parameter values for the
+    element type, e.g. a logo's position}; they win over the preset and are labelled `kit_label`."""
+    targets = dict(STYLE_TARGETS.get(etype, {}))
+    settings = settings or {}
+    for param in settings.get("parameters", {}):
+        targets.setdefault(param, "setting")
+    roles = {r: (c, kit_label if src == "brand_kit" else src) for r, (c, src) in resolve_roles(preset, kit).items()}
     spec = STYLE_PRESETS.get(preset) if preset is not None else None
     params: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
@@ -147,6 +155,16 @@ def style_values(etype: str, preset: Optional[str], kit: Optional[Dict[str, str]
             continue
         if param in given:
             continue
+        if param in settings.get("parameters", {}):
+            params[param], sources[param] = settings["parameters"][param], kit_label
+            continue
+        if source == "margin" and settings.get("margin") is not None:
+            if not platform_set:
+                params[param], sources[param] = settings["margin"], kit_label
+            continue
+        if source == "font_id" and settings.get("font") is not None:
+            params[param], sources[param] = dict(settings["font"]), kit_label
+            continue
         if source.startswith("role:"):
             role = source[5:]
             if role in roles:
@@ -156,7 +174,7 @@ def style_values(etype: str, preset: Optional[str], kit: Optional[Dict[str, str]
                 colour, src = roles["background"]
                 params[param] = f"{colour}@{spec['box_opacity']:g}"
                 sources[param] = src
-        elif spec is not None:
+        elif spec is not None and source != "setting":
             if source == "margin" and platform_set:
                 continue
             value = spec[source]

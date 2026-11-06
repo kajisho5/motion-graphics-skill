@@ -298,6 +298,24 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:color", "filter:overlay", "filter:colorchannelmixer", "encoder:libx264",
                                   "ffmpeg-skill-tool:background"],
     },
+    # logo (ADR-29): the active theme's logo, composited like an image_overlay (ffmpeg-skill/overlay --image). Its image, and the
+    # defaults for the parameters below, come from the theme file; a document without a theme that has a logo is refused at plan/run.
+    # No configurable fade: offering one would change the contract's `animations` block, which consumers pin (use an image_overlay
+    # of the same file for a fade).
+    "logo": {
+        "tool": "overlay", "mode": "image",
+        "description": "The active theme's logo (options.themes / options.theme) composited at a position over the element's window "
+                       "(ffmpeg-skill/overlay --image). Position, margin, width and opacity default to the theme's logo settings.",
+        "animation": "none",
+        "parameters": {
+            "position": {"type": _POS, "required": False, "default": "top-right"},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24, "platform_replaces_default": True},
+            "scale_width": {"type": _INT, "required": False, "min": 1, "max": 8192},
+            "scale_percent": {"type": _NUM, "required": False, "min": 0.1, "max": 100.0},
+            "opacity": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 1.0},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:overlay", "filter:scale", "filter:colorchannelmixer", "encoder:libx264"],
+    },
     # rendered_layer (ADR-25): a pre-rendered clip with an alpha channel (animated graphics made elsewhere), laid on the video by
     # ffmpeg-skill/overlay --video with one --place per piece: its IN segment at the element's start, its LOOP segment repeated
     # to fill the window, its OUT segment ending at the element's end. The motion is in the clip; this skill only places it.
@@ -595,7 +613,7 @@ def _fit(value: Any, etype: str, where: str) -> Dict[str, Any]:
 
 
 def _element(value: Any, index: int, platform_set: bool = False, default_style: Optional[str] = None,
-             brand_kit: Optional[Dict[str, str]] = None) -> GraphicsElement:
+             brand_kit: Optional[Dict[str, str]] = None, theme: Optional[Dict[str, Any]] = None) -> GraphicsElement:
     where = f"elements[{index}]"
     top_level = ("id", "type", "start", "end", "parameters", "animation", "style", "fit")
     obj = _obj(value, where, top_level, ("id", "type", "start", "end", "parameters"))
@@ -623,7 +641,16 @@ def _element(value: Any, index: int, platform_set: bool = False, default_style: 
     preset = style_name(obj["style"], f"{where}.style") if "style" in obj else default_style
     style_info: Optional[Dict[str, Any]] = None
     styled_animation: Optional[Dict[str, Any]] = None
-    if preset is not None or brand_kit:
+    if theme is not None:
+        # ADR-29: the theme's colours act as the kit, its margin / font / logo settings win over the preset
+        settings: Dict[str, Any] = {"margin": theme.get("margin"), "font": theme.get("font"), "parameters": {}}
+        if etype == "logo" and theme.get("logo"):
+            settings["parameters"] = {k: v for k, v in theme["logo"].items() if k in ("position", "margin", "scale_width", "opacity")}
+        extra, styled_animation, sources = style_values(etype, preset, theme["colors"], praw, "animation" in obj, platform_set,
+                                                        kit_label="theme", settings=settings)
+        praw = dict(praw, **extra)
+        style_info = {"preset": preset, "theme": theme.get("label"), "applied": dict(sorted(sources.items()))}
+    if theme is None and (preset is not None or brand_kit):
         extra, styled_animation, sources = style_values(etype, preset, brand_kit, praw, "animation" in obj, platform_set)
         praw = dict(praw, **extra)
         skipped = []
@@ -636,6 +663,11 @@ def _element(value: Any, index: int, platform_set: bool = False, default_style: 
         style_info = applied_summary(preset, brand_kit, sources)
         if skipped and style_info is not None:
             style_info["skipped"] = skipped
+    if theme is not None and styled_animation is not None and styled_animation["parameters"]["duration"] > (end - start) / 2:
+        styled_animation = None
+        if style_info is not None:
+            style_info["applied"].pop("animation", None)
+            style_info["skipped"] = ["animation"]
     parameters: Dict[str, Any] = {}
     for name, spec in pspec.items():
         if name not in praw:
@@ -698,7 +730,9 @@ def _element(value: Any, index: int, platform_set: bool = False, default_style: 
     return GraphicsElement(element_id, etype, start, end, parameters, animation, style_info, fit)
 
 
-def parse_request(document: Any) -> GraphicsDocument:
+def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> GraphicsDocument:
+    """`theme` is the loaded active theme (themes.load_theme, done by the executor, which may read files); without it a document
+    that names themes is checked structurally and no theme is applied (`validate` touches no files)."""
     _reject_forbidden(document, "document")
     top = _obj(document, "document", ("schema", "video", "output", "elements", "options"), ("video", "output", "elements"))
     if "schema" in top and top["schema"] != REQUEST_SCHEMA_ID:
@@ -722,12 +756,20 @@ def parse_request(document: Any) -> GraphicsDocument:
     platform_set = isinstance(options_peek, dict) and options_peek.get("platform") is not None
     default_style: Optional[str] = None
     brand_kit: Optional[Dict[str, str]] = None
+    theme_options = None
     if isinstance(options_peek, dict):
+        from .themes import parse_theme_options
+        theme_options = parse_theme_options(options_peek)
+        if theme_options is not None and (options_peek.get("style") is not None or options_peek.get("brand_kit") is not None):
+            raise MotionGraphicsError("INVALID_REQUEST", "document.options: a theme gives the colours and the base style; do not combine it with "
+                                      "options.style or options.brand_kit", {"field": "document.options.theme"})
         if options_peek.get("style") is not None:
             default_style = style_name(options_peek["style"], "document.options.style")
         if options_peek.get("brand_kit") is not None:
             brand_kit = parse_brand_kit(options_peek["brand_kit"])
-    elements = [_element(e, i, platform_set, default_style, brand_kit) for i, e in enumerate(raw_elements)]
+    if theme is not None:
+        default_style = theme.get("base_style")
+    elements = [_element(e, i, platform_set, default_style, brand_kit, theme) for i, e in enumerate(raw_elements)]
     seen: Dict[str, int] = {}
     for i, el in enumerate(elements):
         if el.element_id in seen:
@@ -737,7 +779,7 @@ def parse_request(document: Any) -> GraphicsDocument:
 
     options_raw = top.get("options", {})
     options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform", "style", "brand_kit",
-                                                         "reserved_regions"), ())
+                                                         "reserved_regions", "themes", "theme"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -771,4 +813,4 @@ def parse_request(document: Any) -> GraphicsDocument:
 
     return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
                              {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform,
-                              "style": default_style, "brand_kit": brand_kit, "reserved_regions": reserved})
+                              "style": default_style, "brand_kit": brand_kit, "reserved_regions": reserved, "themes": theme_options})

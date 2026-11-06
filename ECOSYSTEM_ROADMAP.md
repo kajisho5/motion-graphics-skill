@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.2.8, version single-sourced (step 1). 12 elements (title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme); `shape` (a solid rectangle, two ffmpeg-skill calls in one stage) added by [#33](https://github.com/kajisho5/motion-graphics-skill/pull/33). 241 tests, CI on 3 OSes.
+0.2.15, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11). 632 tests, CI on 3 OSes.
 
 ## What this repository owns
 
@@ -52,6 +52,10 @@ Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 con
   - Why: end-screen elements and card teasers never cover a title or a lower third（なぜ要るか：終了画面やカードとテロップが重なる事故を書き出し前に防げる）
   - Done when: a fixture places a title under an end-screen element during the end screen and another under a card teaser at its time, and both overlaps are reported; with element positions given as input, the check uses those positions
   - Done (ADR-28): `options.reserved_regions` (end screen 5-20 s with input positions or a stated default layout per aspect; cards with teaser time and area, top-right by default; `on_overlap` report or refuse); `tests/test_reserved_regions.py` reports the title under the end screen and the one under a card teaser, and uses input positions when given. Element boxes are exact for shapes and sized assets, estimated for templates (stated per overlap)
+- [x] **11. Brand themes** — colours (primary, secondary, background, text), font, logo and spacing in one theme file (JSON), applied at once to lower thirds, titles, end cards and the other elements; several themes per request, one chosen; colour pairs with too little contrast are warned
+  - なぜ要るか：ブランドごとの配色・書体・ロゴ・余白を毎回並べずに、テーマを切り替えるだけで全テロップに反映できる
+  - Done when: two themes render the same template, and each element's colours and fonts match its theme, checked on the pixels / metadata; a low-contrast theme warns
+  - Done (ADR-29): `options.themes` / `options.theme`, the `logo` element type, the theme font on every graphics template, the contrast report (`response.theme.contrast`, `theme-check`); `tests/test_themes.py` renders one document with two themes and reads each element's colours from the pixels and its font from ffmpeg-skill's report, and a low-contrast theme warns
 
 ## Boundaries
 

@@ -868,3 +868,47 @@ No element type, parameter, `execution`, `provenance` or `colors` entry changes,
 teaser at its time are both reported (a third element on screen at neither time is not); with end-screen positions given as input,
 the check uses those positions (away: nothing; over the title: that region, source `input`); the default top-right card area catches
 a plate there; `refuse` refuses before rendering; and the defaults, the request checks and the box arithmetic.
+
+## ADR-29: brand themes: colours, font, logo and spacing in one file, several per request, one chosen, contrast checked
+
+**Context.** A new roadmap step (added after step 10): a brand's colours (primary, secondary, background, text), font, logo and
+spacing kept in one theme file (JSON) and applied at once to lower thirds, titles, end cards and the rest; several themes, switchable;
+a warning for colour pairs with too little contrast.
+
+**Decision.**
+- *File* (`themes.parse_theme`, schema `motion-graphics/theme@1`): `colors` with all four roles (RRGGBB or a colour name, opaque);
+  optional `font` (`font_id` or `font_file`), `logo` (`path`, `position`, `margin`, `scale_width`, `opacity`), `spacing.margin`,
+  `base_style` (a style preset, ADR-24) and `name`. Relative paths are relative to the theme file; every path goes through PathPolicy.
+  Unknown fields and the forbidden field names are refused (`INVALID_INPUT`, `bad_theme`).
+- *Request:* `options.themes` maps names to theme files (1 to 16) and `options.theme` names the one to use (optional when there is
+  one). Switching theme is changing that name; nothing else in the document changes. A theme gives the colours and the base style, so
+  `options.style` and `options.brand_kit` are refused together with it. `validate` touches no files: it checks these two fields
+  structurally and applies no theme. `plan` and `run` read the chosen file and parse the document again with it applied.
+- *What it fills* (the preset targets, ADR-24): the role colours on every element type, `spacing.margin` on every margin target (not
+  under `options.platform`), the font as `text_overlay`'s `font` and as the font of every graphics template (ffmpeg-skill/graphics
+  `--font` / `--font-file`, which every checkout this skill runs against has; a font file is passed by name with the call's working
+  directory set to its folder, as for text_overlay), and `base_style` for the settings the theme does not give. Precedence: an explicit
+  parameter > the theme > its base style. Each element reports what came from where (`style.applied`: `theme` | `preset`).
+- *Logo:* a new `logo` element type draws the active theme's logo through ffmpeg-skill/overlay `--image`; its position, margin, width
+  and opacity default to the theme's logo settings. With no theme, or a theme without a logo, it is `INVALID_REQUEST`
+  (`theme_without_logo`) before anything renders. It has no configurable fade: listing one would change the contract's `animations`
+  block, which consumers pin; an `image_overlay` of the same file can fade. An end card is a title (or hook) plus a logo element.
+- *Contrast:* every theme is checked with the relative-luminance contrast ratio, (L1 + 0.05) / (L2 + 0.05) of the sRGB colours, for the
+  pairs the templates draw: text on the theme background (4.5:1), primary on the theme background (3:1), and text and primary on the
+  lower third's fixed dark plate `101418` (4.5:1 each; its second line is drawn in primary). Each pair under its minimum is a warning
+  and `ok: false` in `response.theme.contrast`. Colours are never changed. `motion-graphics theme-check <file> --json` prints the same
+  report for a file alone.
+- *Reporting:* `response.theme` (label, name, the file's sha256 and size, colours, font by id or file name, logo settings, margin, base
+  style, contrast) in plan and run. Each graphics/overlay stage reports the font ffmpeg-skill says it drew with (`font_used`: family,
+  file name, how it was found) when the checkout reports one (2.x and later). The theme's font and logo are part of each stage's
+  identity through their sha256 / font id, as any font or asset is.
+
+**Consumers.** New top-level `themes` block, a new element type and Capability id (`motion_graphics.logo`), and optional request fields.
+No existing element type, parameter, `animations`, `execution`, `provenance` or `colors` entry changes, so the agent's `check_contract()`
+passes and its fatal drift is unchanged.
+
+**Verified.** `tests/test_themes.py` renders the same document (a lower third, a title, a logo) with two themes over a grey video and
+reads back from the pixels the lower third's accent in each theme's primary (and not the other's), its name and the title in each
+theme's text colour, and each theme's logo; and from ffmpeg-skill's report (or, on a checkout that does not report it, the command it
+ran) that the lower third and the title were drawn with each theme's font (a registry font for one, a font file for the other). A
+low-contrast theme gives one warning per failing pair. Run against ffmpeg-skill 3.2.0 (main), 2.24.1 and 0.12.5.
