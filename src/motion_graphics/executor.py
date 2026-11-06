@@ -24,6 +24,7 @@ from .colors import template_color
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
 from .layers import has_alpha, layer_placements, place_args
+from .textfit import fit as fit_text
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
 from .security import PathPolicy
 
@@ -164,10 +165,14 @@ class Executor:
             elif el.type == "text_overlay":
                 resolved_fonts[el.element_id] = resolve_font(None, self.policy)
 
+        # ADR-27: a lower_third / title with `fit` is shrunk and broken for this frame size before anything renders
+        fits: Dict[str, Dict[str, Any]] = {el.element_id: self._fit(el, width, height) for el in ordered if el.fit is not None}
+
         document_id = stable_hash({"video_sha256": video_hash, "elements": [e.to_dict() for e in ordered]})[:16]
 
         if self.dry_run:
-            timeline = [self._plan_entry(i, el, resolved_assets, resolved_fonts) for i, el in enumerate(ordered)]
+            timeline = [dict(self._plan_entry(i, el, resolved_assets, resolved_fonts), **({"fit_result": fits[el.element_id]} if el.element_id in fits else {}))
+                        for i, el in enumerate(ordered)]
             return {"schema": RESPONSE_SCHEMA_ID, "skill": {"id": SKILL_ID, "version": VERSION}, "ok": True, "status": "ok", "dry_run": True,
                     "plan": {"document_id": document_id, "video": {"path": str(video_path), "sha256": video_hash, "duration": duration, "width": width, "height": height},
                              "output": {"path": str(output_path)}, "timeline": timeline},
@@ -194,6 +199,8 @@ class Executor:
         for i, el in enumerate(ordered):
             is_last = i == len(ordered) - 1
             identity_input = self._identity_parameters(el, resolved_assets.get(el.element_id), resolved_fonts.get(el.element_id))
+            if el.element_id in fits:
+                identity_input = dict(identity_input, fit=fits[el.element_id])
             clip: Optional[Dict[str, Any]] = None
             if el.type == "shape":
                 # the clip's identity is known before it exists, so the stage identity (and a reuse of the stage) never needs it rendered
@@ -232,7 +239,8 @@ class Executor:
                 made = self._shape_clip(el, clip, work_dir, output_ext, crf, preset)
                 derived = [made["record"]]
                 asset = {"path": made["path"]}
-            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), asset, resolved_fonts.get(el.element_id), crf, preset, audio_stream, platform)
+            tool, argv, tool_cwd = self._argv(el, stage_input, str(target), asset, resolved_fonts.get(el.element_id), crf, preset, audio_stream, platform,
+                                              fit=fits.get(el.element_id))
             try:
                 run = self.skill.run_tool(tool, argv, self.timeout, tool_cwd)
                 artifact_meta = self._validate_stage_output(target, el, width, height, prev_duration)
@@ -252,6 +260,13 @@ class Executor:
             stage_input, prev_identity, prev_duration = str(target), identity, artifact_meta["duration"]
 
         warnings: List[str] = []
+        for eid, f in fits.items():
+            if not f["fits"]:
+                warnings.append(f"elements[{eid}]: the text needs more than fit.max_lines lines even at the smallest scale ({f['scale']:g}); "
+                                f"it is drawn whole on more lines (fit.overflow)")
+            if f["forced_break"]:
+                warnings.append(f"elements[{eid}]: a run of text with no break opportunity was wider than the box at the smallest scale and was "
+                                f"broken between characters (fit.forced_break)")
         for r in results:
             if r.dropped_non_av_streams:
                 warnings.append(f"elements[{r.element_id}] ({r.type}): ffmpeg-skill/{r.tool} could not preserve the source's subtitle/data stream(s) for this "
@@ -363,8 +378,11 @@ class Executor:
     # Returns (tool, argv, cwd): cwd is None except for a custom font_file (see the comment below).
     def _argv(self, el: GraphicsElement, stage_input: str, stage_output: str, asset: Optional[Dict[str, Any]],
               font: Optional[ResolvedFont], crf: int, preset: str, audio_stream: Optional[int] = None,
-              platform: Optional[str] = None) -> Tuple[str, List[str], Optional[str]]:
+              platform: Optional[str] = None, fit: Optional[Dict[str, Any]] = None) -> Tuple[str, List[str], Optional[str]]:
         p = el.parameters
+        if fit is not None:
+            # the fitted texts (line breaks put in at the chosen break opportunities) replace the given ones; nothing is cut
+            p = dict(p, **{key: "\n".join(t["lines"]) for key, t in fit["texts"].items()})
         spec = ELEMENT_TYPES[el.type]
         if spec["tool"] == "graphics":
             argv = [stage_input, "-o", stage_output, "--template", spec["template"],
@@ -406,6 +424,10 @@ class Executor:
                 argv += ["--text-color", template_color(p["text_color"])]
             if p.get("primary_color"):
                 argv += ["--primary", template_color(p["primary_color"])]
+            if fit is not None:
+                argv += ["--scale", f"{fit['scale']:g}"]
+                if el.fit and el.fit.get("lang"):
+                    argv += ["--lang", el.fit["lang"]]
             return "graphics", argv, None
 
         argv = [stage_input, "-o", stage_output, "--position", p["position"]]
@@ -471,6 +493,27 @@ class Executor:
                 argv += ["--chromakey", _overlay_color(p["chromakey"]), "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
                          "--chromakey-blend", fmt_number(p["chromakey_blend"])]
         return "overlay", argv, cwd
+
+    # ---- text fit (ADR-27)
+    def _fit(self, el: GraphicsElement, width: int, height: int) -> Dict[str, Any]:
+        """Shrink and break a lower_third / title's texts to its fit box for this frame. Needs graphics --scale and --wrap (1.16's
+        multi-line label layout) in the checkout, and --lang when the fit names one; refused before rendering otherwise."""
+        assert el.fit is not None
+        info = self.skill.info() if self.skill is not None else None
+        if info is not None:
+            needed = ["scale", "wrap"] + (["lang"] if el.fit.get("lang") else [])
+            missing = [f for f in needed if not info.takes_flag("graphics", f)]
+            if missing:
+                raise MotionGraphicsError("TOOL_ERROR", f"elements[{el.element_id}]: a text fit needs ffmpeg-skill/graphics {['--' + f for f in missing]}, which the "
+                                          f"ffmpeg-skill at {info.directory} (version {info.version}) does not have",
+                                          {"reason": "ffmpeg_skill_lacks_flag", "element_id": el.element_id, "flags": missing, "ffmpeg_skill_version": info.version},
+                                          retryable=False)
+        keys = ("name", "title") if el.type == "lower_third" else ("title", "subtitle")
+        texts = {k: el.parameters[k] for k in keys if el.parameters.get(k)}
+        f = el.fit
+        result = fit_text(el.type, texts, (width, height), f["width"], f["max_lines"], f["min_scale"], f.get("profile"))
+        result.update(box_width=f["width"], profile=f.get("profile"), lang=f.get("lang"))
+        return result
 
     # ---- shape: the generated clip (ADR-22)
     @staticmethod

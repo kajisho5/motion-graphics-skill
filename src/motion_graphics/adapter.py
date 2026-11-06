@@ -76,7 +76,9 @@ FLAG_ALTERNATIVES: Dict[str, Dict[str, Tuple[str, ...]]] = {
 # `place` (ffmpeg-skill/overlay --place SRC_START-SRC_END@AT, repeatable, with --video; 2.x) lays pieces of a layer at their own
 # times: the rendered_layer element's IN / LOOP / OUT segments (ADR-25). Emitted only for that element type, which is refused up
 # front when the checkout lacks it.
-OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite", "platform"), "overlay": ("overwrite", "platform", "place")}
+# `scale`, `lang` and `wrap` on graphics carry a lower_third / title text fit (ADR-27): the size multiplier the fit chose, the text's
+# language, and -- `wrap` being 1.16's multi-line label layout -- the sign that a label with line breaks is laid out line by line.
+OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite", "platform", "scale", "lang", "wrap"), "overlay": ("overwrite", "platform", "place")}
 # graphics templates the oldest verified ffmpeg-skill (0.12.5) does not have. An element type built on one needs the
 # name in the checkout's `--template` choices AND the flags listed here; the element type is refused up front when the
 # checkout lacks either (never attempted and left to fail inside the tool), and doctor reports it unsupported.
@@ -180,6 +182,10 @@ class SkillInfo:
     def takes_platform(self, tool: str) -> bool:
         return bool((self.features.get("platform_flag") or {}).get(tool))
 
+    def takes_flag(self, tool: str, flag: str) -> bool:
+        """Whether this checkout's ffmpeg-skill/<tool> has the optional flag (OPTIONAL_FLAGS)."""
+        return flag in ((self.features.get("optional_flags") or {}).get(tool) or [])
+
     def takes_place(self) -> bool:
         """Whether this checkout's ffmpeg-skill/overlay has --place (rendered_layer, ADR-25)."""
         return bool(self.features.get("place_flag"))
@@ -243,6 +249,7 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
     platforms: Dict[str, Optional[List[str]]] = {}
     template_support: Dict[str, Optional[bool]] = {}
     place_flag = False
+    optional_present: Dict[str, List[str]] = {}
     for tool, flags in REQUIRED_FLAGS.items():
         spec = tools.get(tool)
         if spec is None:
@@ -258,6 +265,7 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
                 missing.append("|".join(alternatives))
         if "overwrite" in OPTIONAL_FLAGS.get(tool, ()):
             overwrite[tool] = "overwrite" in props
+        optional_present[tool] = [f for f in OPTIONAL_FLAGS.get(tool, ()) if f in props]
         if "place" in OPTIONAL_FLAGS.get(tool, ()):
             place_flag = "place" in props
         if "platform" in OPTIONAL_FLAGS.get(tool, ()):
@@ -284,6 +292,7 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
         generator_flags[tool] = {"encoder_quality": next(("--" + f for f in ("quality", "crf") if f in props), None),
                                  "overwrite": "overwrite" in props, "preset": "preset" in props}
     return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite, "platform_flag": platform_flag, "platforms": platforms, "place_flag": place_flag,
+                      "optional_flags": optional_present,
                       "template_support": template_support, "generator_support": generator_support, "generator_flags": generator_flags}
 
 

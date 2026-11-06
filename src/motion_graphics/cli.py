@@ -7,7 +7,8 @@ stderr: diagnostics only. Exit code: 0 on success, otherwise errors.EXIT_CODES[e
   motion-graphics doctor --json           environment vs. contract
   motion-graphics validate - --json       validate a request document, run nothing, touch no files
   motion-graphics plan - --json           dry run: resolves and probes inputs, writes no media
-  motion-graphics run - --json [--dry-run]"""
+  motion-graphics run - --json [--dry-run]
+  motion-graphics lower-thirds names.csv --video in.mp4 --output out.mp4 --fit-width 600   one lower third per CSV row (a request)"""
 from __future__ import annotations
 
 import argparse
@@ -59,6 +60,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_opts(r)
     r.add_argument("--dry-run", action="store_true", help="same as plan")
     _add_common(r)
+    lt = sub.add_parser("lower-thirds", help="print a request with one fitted lower third per CSV row (renders nothing)")
+    lt.add_argument("csv", help="CSV file with a header row: name, title, start, end, id, lang, profile")
+    lt.add_argument("--video", required=True)
+    lt.add_argument("--output", required=True)
+    lt.add_argument("--fit-width", type=int, required=True, help="box width in px every lower third's text must stay within")
+    lt.add_argument("--max-lines", type=int, default=2)
+    lt.add_argument("--min-scale", type=float, default=0.6)
+    lt.add_argument("--start", type=float, default=0.0, help="first row's start when the CSV has no start column")
+    lt.add_argument("--duration", type=float, default=4.0, help="each row's length when the CSV has no end column")
+    lt.add_argument("--gap", type=float, default=0.5)
+    lt.add_argument("--style", help="a style preset for every row (contract style_presets)")
+    lt.add_argument("--overwrite", action="store_true")
+    _add_common(lt)
     return ap
 
 
@@ -124,6 +138,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         doc = doctor_report(args.ffmpeg_skill, args.workspace, args.allowed_input)
         _emit(doc, as_json)
         return 0 if doc["status"] != "fail" else 1
+    if args.cmd == "lower-thirds":
+        from .csvrows import lower_thirds_document
+        try:
+            with open(args.csv, "r", encoding="utf-8-sig", newline="") as fh:
+                text = fh.read(4 * 1024 * 1024 + 1)
+            if len(text) > 4 * 1024 * 1024:
+                raise MotionGraphicsError("INVALID_REQUEST", "the CSV is larger than 4 MiB")
+            doc = lower_thirds_document(text, args.video, args.output, fit_width=args.fit_width, max_lines=args.max_lines, min_scale=args.min_scale,
+                                        start=args.start, duration=args.duration, gap=args.gap, style=args.style, overwrite=args.overwrite)
+        except OSError as e:
+            doc = _error_document(MotionGraphicsError("INVALID_REQUEST", f"cannot read the CSV: {e}"), True)
+        except MotionGraphicsError as e:
+            doc = _error_document(e, True)
+        # ASCII-escaped: the request carries names in any script, and a console encoding such as cp1252 (Windows) cannot
+        # print them as text; the escaped JSON is the same document under every encoding
+        sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=True) + "\n")
+        return 0 if doc.get("ok", True) else EXIT_CODES.get(doc["error"]["code"], EXIT_CODES["INTERNAL_ERROR"])
     dry_run = args.cmd == "plan" or bool(getattr(args, "dry_run", False))
     try:
         document = _read_document(args.request)

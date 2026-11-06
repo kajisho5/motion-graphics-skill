@@ -255,6 +255,15 @@ it), but non-Latin scripts need a `font_file` pointing at a CJK-capable font (e.
 correctly. This is a font *content* limitation, not a rendering bug; it is the same behavior `ffmpeg-skill/overlay`
 documents for its own `--font-file` option.
 
+## Text fit and lower thirds from a CSV
+
+`elements[].fit` on a `lower_third` or `title` keeps its text inside a box: `{width, max_lines?, min_scale?, profile?, lang?}`.
+The text is shrunk (ffmpeg-skill/graphics `--scale`, down to `min_scale`) before it is broken, and broken only at the
+language's break opportunities (after spaces; between ideographs and kana; never before closing or after opening
+punctuation); `profile: ja-kinsoku` adds the Japanese line-start rules. The size and the lines used are reported
+(`operations[].parameters.fit`); the text is never cut. `motion-graphics lower-thirds speakers.csv --video in.mp4 --output
+out.mp4 --fit-width 600` prints a request with one fitted lower third per row. See ADR-27.
+
 ## Image / logo overlay
 
 `image_overlay.parameters.image_path` goes through PathPolicy (workspace/allowed-roots/symlink checks), must be

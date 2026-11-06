@@ -21,6 +21,8 @@ from . import REQUEST_SCHEMA_VERSION, SKILL_ID
 from .colors import NAMED_COLORS, is_hex, split_alpha
 from .errors import MotionGraphicsError
 from .styles import applied_summary, parse_brand_kit, style_name, style_values
+from .textfit import PROFILES as FIT_PROFILES
+from .textfit import TEMPLATE_LAYOUT as FIT_TEMPLATES
 
 REQUEST_SCHEMA_ID = f"{SKILL_ID}/request@{REQUEST_SCHEMA_VERSION}"
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -374,6 +376,9 @@ class GraphicsElement:
     # ADR-24: which preset / brand kit filled which parameters ({preset, brand_kit, applied}); None when unstyled.
     # Reported only: the resolved values are in `parameters`, which is what identity and rendering use.
     style: Optional[Dict[str, Any]] = None
+    # ADR-27: text fit settings {width, max_lines, min_scale, profile?, lang?} (lower_third / title only); None when not asked for.
+    # The fit itself needs the frame size, so the executor computes it.
+    fit: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = {"id": self.element_id, "type": self.type, "start": self.start, "end": self.end, "parameters": dict(self.parameters)}
@@ -381,6 +386,8 @@ class GraphicsElement:
             d["animation"] = self.animation.to_dict()
         if self.style is not None:
             d["style"] = dict(self.style)
+        if self.fit is not None:
+            d["fit"] = dict(self.fit)
         return d
 
 
@@ -544,10 +551,52 @@ def _animation(value: Any, element_type: str, where: str) -> Animation:
     return Animation(kind, params)
 
 
+LANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$")
+FIT_FIELDS: Dict[str, Dict[str, Any]] = {
+    "width": {"type": _INT, "required": True, "min": 16, "max": 7680,
+              "description": "the box width in px the template's text (with its inner padding) must stay within"},
+    "max_lines": {"type": _INT, "required": False, "min": 1, "max": 6, "default": 2, "description": "lines per text before it counts as overflow"},
+    "min_scale": {"type": _NUM, "required": False, "min": 0.3, "max": 1.0, "default": 0.6, "description": "the smallest size multiplier tried"},
+    "profile": {"type": _STR, "required": False, "enum": FIT_PROFILES, "description": "an opt-in regional line-breaking profile"},
+    "lang": {"type": _STR, "required": False, "description": "language tag of the text (BCP 47, e.g. en, ar, ja), passed to ffmpeg-skill/graphics --lang"},
+}
+
+
+def _fit(value: Any, etype: str, where: str) -> Dict[str, Any]:
+    if etype not in FIT_TEMPLATES:
+        raise MotionGraphicsError("UNSUPPORTED_OPERATION", f"{where}: text fit is offered for {sorted(FIT_TEMPLATES)} only, not {etype!r}",
+                                  {"field": where, "element_type": etype})
+    obj = _obj(value, where, tuple(FIT_FIELDS), ("width",))
+    out: Dict[str, Any] = {}
+    for name, spec in FIT_FIELDS.items():
+        if name not in obj:
+            if "default" in spec:
+                out[name] = spec["default"]
+            continue
+        raw, w = obj[name], f"{where}.{name}"
+        if spec["type"] == _INT:
+            if isinstance(raw, bool) or not isinstance(raw, int) or not (spec["min"] <= raw <= spec["max"]):
+                raise MotionGraphicsError("INVALID_REQUEST", f"{w} must be an integer within [{spec['min']}, {spec['max']}]", {"field": w})
+            out[name] = raw
+        elif spec["type"] == _NUM:
+            num = _finite_number(raw, w)
+            if not (spec["min"] <= num <= spec["max"]):
+                raise MotionGraphicsError("INVALID_REQUEST", f"{w} must be within [{spec['min']}, {spec['max']}]", {"field": w})
+            out[name] = num
+        else:
+            text = _string(raw, w, max_length=35)
+            if "enum" in spec and text not in spec["enum"]:
+                raise MotionGraphicsError("INVALID_REQUEST", f"{w} must be one of {list(spec['enum'])}: {text!r}", {"field": w})
+            if name == "lang" and not LANG_RE.match(text):
+                raise MotionGraphicsError("INVALID_REQUEST", f"{w} must be a language tag such as en, ar or ja: {text!r}", {"field": w})
+            out[name] = text
+    return out
+
+
 def _element(value: Any, index: int, platform_set: bool = False, default_style: Optional[str] = None,
              brand_kit: Optional[Dict[str, str]] = None) -> GraphicsElement:
     where = f"elements[{index}]"
-    top_level = ("id", "type", "start", "end", "parameters", "animation", "style")
+    top_level = ("id", "type", "start", "end", "parameters", "animation", "style", "fit")
     obj = _obj(value, where, top_level, ("id", "type", "start", "end", "parameters"))
     element_id = _id(obj["id"], f"{where}.id")
     etype = obj["type"]
@@ -644,7 +693,8 @@ def _element(value: Any, index: int, platform_set: bool = False, default_style: 
         if animation.kind == "fade" and animation.parameters["duration"] > (end - start) / 2:
             raise MotionGraphicsError("INVALID_TIME_RANGE", f"{where}.animation: fade duration {animation.parameters['duration']}s does not fit within [{start}, {end}]",
                                        {"field": f"{where}.animation.parameters.duration"})
-    return GraphicsElement(element_id, etype, start, end, parameters, animation, style_info)
+    fit = _fit(obj["fit"], etype, f"{where}.fit") if "fit" in obj else None
+    return GraphicsElement(element_id, etype, start, end, parameters, animation, style_info, fit)
 
 
 def parse_request(document: Any) -> GraphicsDocument:
