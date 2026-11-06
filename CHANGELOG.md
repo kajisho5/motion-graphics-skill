@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.15 — 2026-11-06
+
+- Report graphics under YouTube end-screen elements and card teasers (roadmap step 10) (#41) (9565d71)
+
 ## v0.2.14 — 2026-11-06
 
 - Fit lower-third and title text to a box, and build lower thirds from a CSV (roadmap step 9) (#40) (8ce905a)
