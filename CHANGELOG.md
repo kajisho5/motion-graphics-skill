@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.16 — 2026-11-06
+
+- Add brand themes: colours, font, logo and spacing from one file, switchable, contrast checked (roadmap step 11) (#42) (78b49ff)
+
 ## v0.2.15 — 2026-11-06
 
 - Report graphics under YouTube end-screen elements and card teasers (roadmap step 10) (#41) (9565d71)
