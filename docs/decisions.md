@@ -776,3 +776,53 @@ the graphics in an NLE. The rendered-layer element (ADR-25) already covers the o
 input's alpha through to an alpha output (`--codec prores4444` or `qtrle`), verified by reading the alpha back as `export.py` already
 does. With that, each element is one more typed call on a transparent canvas of the programme's size and timing, the manifest's boxes
 come from the same template layouts the renders use, and the PSNR check is an overlay of each layer over the clean programme.
+
+## ADR-27: lower_third / title text fit: shrink to a stated minimum, then break at the language's break opportunities
+
+**Context.** Roadmap step 9: a lower third for each of ten speakers from a CSV must fit long names and affiliations in any
+language, never cutting the text, with regional line rules opt-in.
+
+**Decision.** An element-level `fit` object on `lower_third` and `title` (refused on other types): `width` (the box in px the
+template's text, with its inner padding, must stay within; required), `max_lines` (per text, default 2), `min_scale` (default
+0.6), `profile` (opt-in, `ja-kinsoku`) and `lang` (a language tag, passed to ffmpeg-skill/graphics `--lang`). It is a separate
+object, not new parameters, so the element types' parameter schemas are unchanged.
+- *Search* (`textfit.fit`): scales from 1.0 down to `min_scale` in steps of 0.05 (graphics `--scale`), first one line per text,
+  then up to `max_lines`; the first fit wins, so a text is shrunk before it is broken. If nothing fits, the smallest scale with as
+  many lines as it takes is used, `fits: false` and a warning. A run with no break opportunity that is wider than the box at the
+  smallest size is broken between characters (`forced_break`, warning). The text is never cut.
+- *Width:* a per-character advance table in em, rounded up against common sans-serif and CJK faces (wide CJK/kana/Hangul 1.0,
+  M/W/m/w 1.0, upper case and digits 0.8, Arabic/Hebrew 0.8, other letters 0.65, spaces 0.35, unknown scripts 1.0), plus the
+  renderer's possible outline. A drawn line can be narrower than the estimate, not wider. The sizes are the template's
+  (`TEMPLATE_LAYOUT`: lower third name 0.055, title line 0.038, padding 0.035 of the short side; title 0.11 and subtitle 0.045),
+  the same in every checkout the fit is offered on (0.12.5's graphics.py through 3.2.0).
+- *Breaks* (UAX #14, simplified): after spaces, hyphens and slashes; before and after ideographs, kana and Hangul; never before
+  closing punctuation, a full stop, comma or iteration mark; never after opening punctuation; never inside a run of an alphabetic
+  script. `ja-kinsoku` also makes small kana, the prolonged sound mark and the middle dot non-starters (UAX #14 does so only
+  under strict breaking).
+- *Direction:* from the first strong character; Arabic and Hebrew lines are reported `rtl`. Lines are passed in logical order and
+  ffmpeg-skill's text renderer lays each out by its direction.
+- *Execution:* the fit needs the frame size, so the executor computes it after probing, before anything renders. The fitted lines
+  replace the texts in the argv (joined with line breaks) and `--scale` is sent. It needs graphics `--scale` and `--wrap` (1.16's
+  multi-line label layout; on newer checkouts a label that already fits each line is left untouched by ffmpeg-skill's own wrap), and
+  `--lang` when `fit.lang` is given; these are optional flags detected in the checkout, and a fit is refused before rendering without
+  them (`TOOL_ERROR`, `ffmpeg_skill_lacks_flag`). 0.12.5 lacks `--wrap`.
+- *Report:* `operations[].parameters.fit` (part of the identity) and the plan's `timeline[].fit_result`: scale, per text {lines,
+  font_size, direction, widest_px}, pad, fits, overflow, forced_break, box_width, profile, lang.
+- *CSV:* `motion-graphics lower-thirds <file.csv> --video V --output O --fit-width N` prints a validated request with one fitted
+  lower third per row (columns `name`, `title`, `start`, `end`, `id`, `lang`, `profile`; rows without times are laid out one after
+  another). It renders nothing.
+
+**Not provided.** Phrase-level breaks from a dictionary or a model (for Japanese phrases, or Thai, which has no spaces): no such
+dependency is added; only the rules above. On checkouts before ffmpeg-skill widened the lower-third bar to its text (3.0.0 and 2.24.1
+draw a fixed bar of 62 % of the short side), a fitted text can extend past the bar; it still stays inside the box.
+
+**Consumers.** The contract gains a top-level `text_fit` block and `elements[].fit` in `request.shape`; `scale`, `lang`, `wrap` join
+`ffmpeg_skill.optional_flags.graphics`. No element type, parameter, `execution`, `provenance` or `colors` entry changes, so the
+agent's `check_contract()` passes and its fatal drift is unchanged.
+
+**Verified.** `tests/test_text_fit.py`: the width table, the break rules with and without the profile, the search, the request and
+the CSV; and a render of `tests/fixtures/speakers.csv` (ten rows: English, Spanish, Arabic and Japanese, one 40-character
+affiliation, two Japanese rows with `ja-kinsoku` and brackets) over a grey 640x360 video with a 300 px box. Every lower third's drawn
+pixels span at most the box width, no fitted line of the kinsoku rows starts with closing punctuation or a small kana, the Arabic
+rows are `rtl`, and the lines put together give back each text. Run against ffmpeg-skill 3.2.0 (main), 3.0.0 and 2.24.1; on 0.12.5
+the same test asserts the up-front refusal.

@@ -14,7 +14,8 @@ from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
 from .styles import contract_section as style_presets_section
-from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, PLATFORM_NAMES, POSITION_NAMES,
+from .textfit import contract_section as text_fit_section
+from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FIT_FIELDS, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, PLATFORM_NAMES, POSITION_NAMES,
                     REQUEST_SCHEMA_ID, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES)
 
 CONTRACT_SCHEMA_ID = f"{SKILL_ID}/contract@{CONTRACT_SCHEMA_VERSION}"
@@ -140,6 +141,8 @@ def skill_contract() -> Dict[str, Any]:
                                                             "transparency is its opacity parameter (ADR-22)"}},
         # ADR-24: named presets, typed bundles of the parameters the element types already have
         "style_presets": style_presets_section(),
+        # ADR-27: lower_third / title text shrunk and broken to a box
+        "text_fit": text_fit_section({k: _param_schema(v) for k, v in FIT_FIELDS.items()}),
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
         "fonts": {"registry": {fid: spec["family"] for fid, spec in FONT_REGISTRY.items()}, "default_font_id": DEFAULT_FONT_ID,
                   "custom_font_file": {"allowed_extensions": list(ALLOWED_FONT_EXTENSIONS), "path_policy": True, "provenance": "font_file_hash (sha256)"},
@@ -178,7 +181,8 @@ def skill_contract() -> Dict[str, Any]:
                                             "parameters": {"...": "see element_types[].parameters"}, "animation?": {"kind": "fade", "parameters": {"duration": 0.5}}}],
                               "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0, "platform?": "tiktok",
                                            "style?": "news", "brand_kit?": {"primary?": "RRGGBB", "secondary?": "RRGGBB", "background?": "RRGGBB", "text?": "RRGGBB"}},
-                              "elements[].style?": "a style_presets name"}},
+                              "elements[].style?": "a style_presets name",
+                              "elements[].fit?": {"width": 600, "max_lines?": 2, "min_scale?": 0.6, "profile?": "ja-kinsoku", "lang?": "ja"}}},
         "response": {"schema": f"{SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION}",
                      "success": {
                          "run": {"ok": True, "status": "ok", "dry_run": False, "output": "{path, sha256, size, duration, width, height}",
