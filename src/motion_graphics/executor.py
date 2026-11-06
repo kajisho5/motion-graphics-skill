@@ -24,6 +24,7 @@ from .colors import template_color
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
 from .layers import has_alpha, layer_placements, place_args
+from .regions import element_boxes, overlaps, resolve_regions
 from .textfit import fit as fit_text
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
 from .security import PathPolicy
@@ -141,7 +142,8 @@ class Executor:
                 if not pip_meta.get("video"):
                     raise MotionGraphicsError("INVALID_INPUT", f"elements[{el.element_id}].parameters.video_path has no video stream: {video_overlay_path}",
                                                {"element_id": el.element_id, "path": str(video_overlay_path)})
-                resolved_assets[el.element_id] = {"path": str(video_overlay_path), "sha256": sha256_file(str(video_overlay_path)), "size": video_overlay_path.stat().st_size}
+                resolved_assets[el.element_id] = {"path": str(video_overlay_path), "sha256": sha256_file(str(video_overlay_path)), "size": video_overlay_path.stat().st_size,
+                                                  "dims": (int(pip_meta["video"].get("width") or 0), int(pip_meta["video"].get("height") or 0))}
             if el.type == "rendered_layer":
                 # ADR-25: the layer must decode with alpha; its duration decides where the IN / LOOP / OUT pieces go
                 layer_path = self.policy.resolve_input(el.parameters["video_path"], f"elements[{el.element_id}].parameters.video_path")
@@ -159,7 +161,7 @@ class Executor:
                 pieces, summary = layer_placements(el.start, el.end, layer_duration, el.parameters["in_duration"], el.parameters["out_duration"],
                                                    el.parameters["loop"], f"elements[{el.element_id}]")
                 resolved_assets[el.element_id] = {"path": str(layer_path), "sha256": sha256_file(str(layer_path)), "size": layer_path.stat().st_size,
-                                                  "pieces": pieces, "segments": summary}
+                                                  "pieces": pieces, "segments": summary, "dims": (int(lv.get("width") or 0), int(lv.get("height") or 0))}
             if el.type == "text_overlay" and el.parameters.get("font"):
                 resolved_fonts[el.element_id] = resolve_font(el.parameters["font"], self.policy)
             elif el.type == "text_overlay":
@@ -167,6 +169,8 @@ class Executor:
 
         # ADR-27: a lower_third / title with `fit` is shrunk and broken for this frame size before anything renders
         fits: Dict[str, Dict[str, Any]] = {el.element_id: self._fit(el, width, height) for el in ordered if el.fit is not None}
+
+        reserved = self._reserved_regions(doc, ordered, resolved_assets, fits, width, height, duration)
 
         document_id = stable_hash({"video_sha256": video_hash, "elements": [e.to_dict() for e in ordered]})[:16]
 
@@ -176,7 +180,8 @@ class Executor:
             return {"schema": RESPONSE_SCHEMA_ID, "skill": {"id": SKILL_ID, "version": VERSION}, "ok": True, "status": "ok", "dry_run": True,
                     "plan": {"document_id": document_id, "video": {"path": str(video_path), "sha256": video_hash, "duration": duration, "width": width, "height": height},
                              "output": {"path": str(output_path)}, "timeline": timeline},
-                    "warnings": []}
+                    **({"reserved_regions": reserved} if reserved else {}),
+                    "warnings": self._region_warnings(reserved)}
 
         # A single-element document never has a non-final stage, so it never needs (or creates) the cache
         # directory at all -- it renders straight into the requested output (ADR-5, docs/decisions.md).
@@ -259,7 +264,7 @@ class Executor:
                                         run.seconds, run.commands, run.dropped_non_av_streams, derived))
             stage_input, prev_identity, prev_duration = str(target), identity, artifact_meta["duration"]
 
-        warnings: List[str] = []
+        warnings: List[str] = self._region_warnings(reserved)
         for eid, f in fits.items():
             if not f["fits"]:
                 warnings.append(f"elements[{eid}]: the text needs more than fit.max_lines lines even at the smallest scale ({f['scale']:g}); "
@@ -288,6 +293,7 @@ class Executor:
                 "operations": [r.to_dict() for r in results],
                 "output_hash": final_meta["sha256"],
             },
+            **({"reserved_regions": reserved} if reserved else {}),
             "warnings": warnings,
         }
 
@@ -493,6 +499,39 @@ class Executor:
                 argv += ["--chromakey", _overlay_color(p["chromakey"]), "--chromakey-similarity", fmt_number(p["chromakey_similarity"]),
                          "--chromakey-blend", fmt_number(p["chromakey_blend"])]
         return "overlay", argv, cwd
+
+    # ---- reserved regions (ADR-28)
+    def _reserved_regions(self, doc: Any, ordered: Tuple[GraphicsElement, ...], assets: Dict[str, Dict[str, Any]], fits: Dict[str, Dict[str, Any]],
+                          width: int, height: int, duration: float) -> Optional[Dict[str, Any]]:
+        """Every element's box against every reserved region while both are on screen. Reported; with on_overlap "refuse", an
+        overlap refuses the request before anything renders."""
+        spec = doc.options.get("reserved_regions")
+        if not spec:
+            return None
+        regions = resolve_regions(spec, width, height, duration)
+        boxes = []
+        for el in ordered:
+            dims = assets.get(el.element_id, {}).get("dims")
+            if el.type == "image_overlay" and dims is None:
+                meta = (self.skill.probe(assets[el.element_id]["path"], self.timeout) or {}).get("video") or {}
+                dims = (int(meta.get("width") or 0), int(meta.get("height") or 0)) if meta else None
+            b, precision = element_boxes(el, width, height, dims if dims and all(dims) else None, fits.get(el.element_id))
+            boxes.append({"id": el.element_id, "type": el.type, "start": el.start, "end": el.end, "boxes": b, "precision": precision})
+        found = overlaps(boxes, regions)
+        report = {"on_overlap": spec["on_overlap"], "regions": [dict(r, box=list(r["box"])) for r in regions], "overlaps": found,
+                  "element_boxes": [{"id": b["id"], "boxes": [list(x) for x in b["boxes"]], "precision": b["precision"]} for b in boxes]}
+        if found and spec["on_overlap"] == "refuse":
+            raise MotionGraphicsError("INVALID_REQUEST", f"{len(found)} element(s) overlap a reserved YouTube region while it is on screen: "
+                                      + ", ".join(f"{o['element_id']} under {o['region']['kind']} {o['region']['id']} at {o['time'][0]:g}-{o['time'][1]:g}s" for o in found),
+                                      {"reason": "reserved_region_overlap", "overlaps": found, "regions": report["regions"]})
+        return report
+
+    @staticmethod
+    def _region_warnings(reserved: Optional[Dict[str, Any]]) -> List[str]:
+        if not reserved:
+            return []
+        return [f"elements[{o['element_id']}] ({o['type']}) overlaps the {o['region']['kind'].replace('_', ' ')} region {o['region']['id']!r} "
+                f"from {o['time'][0]:g}s to {o['time'][1]:g}s (box {o['precision']})" for o in reserved["overlaps"]]
 
     # ---- text fit (ADR-27)
     def _fit(self, el: GraphicsElement, width: int, height: int) -> Dict[str, Any]:

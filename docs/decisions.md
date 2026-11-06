@@ -826,3 +826,38 @@ affiliation, two Japanese rows with `ja-kinsoku` and brackets) over a grey 640x3
 pixels span at most the box width, no fitted line of the kinsoku rows starts with closing punctuation or a small kana, the Arabic
 rows are `rtl`, and the lines put together give back each text. Run against ffmpeg-skill 3.2.0 (main), 3.0.0 and 2.24.1; on 0.12.5
 the same test asserts the up-front refusal.
+
+## ADR-28: YouTube end-screen elements and card teasers are reserved regions; overlaps are reported (or refused), nothing is moved
+
+**Context.** YouTube draws end-screen elements (the last 5-20 s) and card teasers (a few seconds from each card's time) over the
+video, where the editor puts them in YouTube Studio. A title or a lower third under one is covered. Roadmap step 10 asks for those
+regions as an input, every other element kept out of them at those times, and an overlapping graphic reported.
+
+**Decision.** `document.options.reserved_regions` `{end_screen?, cards?, on_overlap?}`:
+- `end_screen` `{duration? (5..20 s, default 20; the last seconds of the video), elements? | layout?}`. `elements` are the positions
+  the editor sets (`{id?, x, y, width, height}` px, 1 to 4, YouTube's limit). Without them the stated default layout for the
+  frame's aspect is used (`regions.DEFAULT_END_SCREENS`: 16:9 two videos and a subscribe element; 9:16 and 1:1 one video and a
+  subscribe element; fractions of the frame), and the result names it so the editor can reproduce it in Studio.
+- `cards` `[{time, duration? (default 5 s), region?, id?}]`, at most 5. Without `region` the stated top-right area is used.
+- `on_overlap`: `report` (default) or `refuse`.
+
+After probing, every element's box is compared with every region over the time both are on screen. Each overlap is in the response
+(`reserved_regions.overlaps`: element, region with its source, time, both boxes, the intersection, precision) with one warning per
+overlap, in `plan` as well as `run`. With `refuse`, any overlap is `INVALID_REQUEST` (`reserved_region_overlap`) before anything
+renders. This skill never moves a graphic: where it goes is the caller's decision (it is "kept out" by the caller acting on the
+report, or by `refuse`).
+
+**Element boxes** (`regions.element_boxes`) are `exact` for a `shape`, and for an image, video or rendered layer of probed size at a
+named or explicit position with its margin; `estimated` otherwise, from the template layouts (the sizes in ADR-27 and the chip, bar,
+band and digit sizes of the other templates, with ffmpeg-skill's default 48 px margin) and the text-fit width table. A text fit's
+chosen size and lines are used when the element has one. Under `options.platform` the safe-zone margins are not modelled, so a box
+without an explicit margin is `estimated`.
+
+**Consumers.** A new top-level `reserved_regions` block in the contract and an optional request field; a `reserved_regions` key in the
+run and plan responses only when the request asks for it. No element type, parameter, `execution`, `provenance` or `colors` entry
+changes, so the agent's `check_contract()` passes and its fatal drift is unchanged.
+
+**Verified.** `tests/test_reserved_regions.py`: a title under the default end screen during it and another title under a card
+teaser at its time are both reported (a third element on screen at neither time is not); with end-screen positions given as input,
+the check uses those positions (away: nothing; over the title: that region, source `input`); the default top-right card area catches
+a plate there; `refuse` refuses before rendering; and the defaults, the request checks and the box arithmetic.

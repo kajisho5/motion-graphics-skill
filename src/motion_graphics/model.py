@@ -21,6 +21,7 @@ from . import REQUEST_SCHEMA_VERSION, SKILL_ID
 from .colors import NAMED_COLORS, is_hex, split_alpha
 from .errors import MotionGraphicsError
 from .styles import applied_summary, parse_brand_kit, style_name, style_values
+from .regions import parse_reserved_regions
 from .textfit import PROFILES as FIT_PROFILES
 from .textfit import TEMPLATE_LAYOUT as FIT_TEMPLATES
 
@@ -735,7 +736,8 @@ def parse_request(document: Any) -> GraphicsDocument:
         seen[el.element_id] = i
 
     options_raw = top.get("options", {})
-    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform", "style", "brand_kit"), ())
+    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform", "style", "brand_kit",
+                                                         "reserved_regions"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -764,6 +766,9 @@ def parse_request(document: Any) -> GraphicsDocument:
     if platform is not None and (not isinstance(platform, str) or platform not in PLATFORM_NAMES):
         raise MotionGraphicsError("INVALID_REQUEST", f"document.options.platform must be one of {PLATFORM_NAMES}: {platform!r}", {"field": "document.options.platform"})
 
+    # YouTube end-screen elements and card teasers (ADR-28): structural check here, boxes once the frame size is known
+    reserved = parse_reserved_regions(options["reserved_regions"]) if options.get("reserved_regions") is not None else None
+
     return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
                              {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform,
-                              "style": default_style, "brand_kit": brand_kit})
+                              "style": default_style, "brand_kit": brand_kit, "reserved_regions": reserved})
