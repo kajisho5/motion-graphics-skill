@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.10 — 2026-11-06
+
+- docs(roadmap): field review steps (2026-11-05) (#36) (6aef950)
+
 ## v0.2.9 — 2026-11-05
 
 - docs(roadmap): bring status and wiring up to date (2026-11-05 review) (#35) (b9f800d)
