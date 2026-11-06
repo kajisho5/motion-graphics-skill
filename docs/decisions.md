@@ -751,3 +751,28 @@ timeline and leaves the picture untouched elsewhere; it cannot be combined with 
 0.5 s steps, OUT blue) with in 0.5 s and out 0.5 s for 6 s, and reads the frames back: red in the in, green in the loop with the
 same phase 2 s apart and a later step one phase on, blue in the out, and the video unchanged under the transparent half. On a
 checkout without `--place` the same test asserts the up-front refusal. Run against ffmpeg-skill 3.2.0 (main), 2.24.1 and 0.12.5.
+
+## ADR-26: layer export is not built: no ffmpeg-skill tool can draw an element onto a transparent picture
+
+**Context.** Roadmap step 8 asks for each element rendered alone on transparent, with the same timing, one file per element and a
+manifest (element id, type, start, end, box), so the graphics can be rebuilt in an NLE, and checks it by compositing the layers over the
+clean programme and comparing with the burned one within a stated PSNR. It needs alpha masters from ffmpeg-skill.
+
+**What was checked** (ffmpeg-skill 3.2.0, `main` on 2026-11-06):
+- `export.py` now has alpha masters (`--preset prores4444|prores4444xq|qtrle|vp9-alpha|hap-alpha`, `--alpha-mode`, and `key-fill`).
+  They keep an alpha the *source* already has and refuse a source without one. They write masters; they do not make an alpha.
+- `graphics.py`, `overlay.py` and `background.py` (the tools this skill draws with) take `--codec h264|hevc|av1|prores`, and `prores`
+  there is 422 HQ. Each writes a picture with no alpha channel: they draw onto an input video, or (`background.py`) make an opaque colour
+  or gradient clip. None takes a transparent canvas or keeps an alpha through to its output.
+- So every element this skill can render comes out opaque. A per-element layer with alpha would need this skill to separate the graphic
+  from its background itself (a difference or key matte built from filters), which ADR-1 forbids, and a chroma key would lose
+  anti-aliased edges and any graphic in the key colour.
+
+**Decision.** Step 8 stays open. Nothing is half-built: a manifest without layer files, or opaque "layers", would not let anyone rebuild
+the graphics in an NLE. The rendered-layer element (ADR-25) already covers the opposite direction (placing alpha clips made elsewhere).
+
+**What would unblock it (a request for ffmpeg-skill, not changed here):** a transparent canvas input for graphics/overlay (for example
+`background.py` writing a fully transparent clip of a given size, rate and length in an alpha codec) and graphics/overlay keeping the
+input's alpha through to an alpha output (`--codec prores4444` or `qtrle`), verified by reading the alpha back as `export.py` already
+does. With that, each element is one more typed call on a transparent canvas of the programme's size and timing, the manifest's boxes
+come from the same template layouts the renders use, and the PSNR check is an overlay of each layer over the clean programme.
