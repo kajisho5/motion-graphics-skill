@@ -154,7 +154,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             doc = _error_document(MotionGraphicsError("INVALID_INPUT", f"cannot read the theme: {e}"), True)
         except MotionGraphicsError as e:
             doc = _error_document(e, True)
-        sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+        sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=True) + "\n")
         return 0 if doc.get("ok") else EXIT_CODES.get(doc["error"]["code"], EXIT_CODES["INTERNAL_ERROR"])
     if args.cmd == "lower-thirds":
         from .csvrows import lower_thirds_document
