@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.12 — 2026-11-06
+
+- Add the rendered_layer element: a pre-rendered alpha clip with IN / LOOP / OUT (roadmap step 7) (#38) (22a3ba0)
+
 ## v0.2.11 — 2026-11-06
 
 - Add named style presets and a brand kit (roadmap step 6) (#37) (200a45b)
