@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.14 — 2026-11-06
+
+- Fit lower-third and title text to a box, and build lower thirds from a CSV (roadmap step 9) (#40) (8ce905a)
+
 ## v0.2.13 — 2026-11-06
 
 - Record why layer export cannot be built yet (roadmap step 8) (#39) (ff3fce4)
