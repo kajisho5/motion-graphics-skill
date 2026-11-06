@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Tuple
 from . import REQUEST_SCHEMA_VERSION, SKILL_ID
 from .colors import NAMED_COLORS, is_hex, split_alpha
 from .errors import MotionGraphicsError
+from .styles import applied_summary, parse_brand_kit, style_name, style_values
 
 REQUEST_SCHEMA_ID = f"{SKILL_ID}/request@{REQUEST_SCHEMA_VERSION}"
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -344,11 +345,16 @@ class GraphicsElement:
     end: float
     parameters: Dict[str, Any]
     animation: Optional[Animation] = None
+    # ADR-24: which preset / brand kit filled which parameters ({preset, brand_kit, applied}); None when unstyled.
+    # Reported only: the resolved values are in `parameters`, which is what identity and rendering use.
+    style: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = {"id": self.element_id, "type": self.type, "start": self.start, "end": self.end, "parameters": dict(self.parameters)}
         if self.animation is not None:
             d["animation"] = self.animation.to_dict()
+        if self.style is not None:
+            d["style"] = dict(self.style)
         return d
 
 
@@ -512,9 +518,10 @@ def _animation(value: Any, element_type: str, where: str) -> Animation:
     return Animation(kind, params)
 
 
-def _element(value: Any, index: int, platform_set: bool = False) -> GraphicsElement:
+def _element(value: Any, index: int, platform_set: bool = False, default_style: Optional[str] = None,
+             brand_kit: Optional[Dict[str, str]] = None) -> GraphicsElement:
     where = f"elements[{index}]"
-    top_level = ("id", "type", "start", "end", "parameters", "animation")
+    top_level = ("id", "type", "start", "end", "parameters", "animation", "style")
     obj = _obj(value, where, top_level, ("id", "type", "start", "end", "parameters"))
     element_id = _id(obj["id"], f"{where}.id")
     etype = obj["type"]
@@ -535,6 +542,24 @@ def _element(value: Any, index: int, platform_set: bool = False) -> GraphicsElem
     tspec = ELEMENT_TYPES[etype]
     pspec = tspec["parameters"]
     praw = _obj(obj["parameters"], f"{where}.parameters", tuple(pspec), tuple(k for k, v in pspec.items() if v.get("required")))
+    # ADR-24: a named preset (and the document's brand kit) fills optional parameters the request left out; the values go
+    # through the same validation below as the caller's own
+    preset = style_name(obj["style"], f"{where}.style") if "style" in obj else default_style
+    style_info: Optional[Dict[str, Any]] = None
+    styled_animation: Optional[Dict[str, Any]] = None
+    if preset is not None or brand_kit:
+        extra, styled_animation, sources = style_values(etype, preset, brand_kit, praw, "animation" in obj, platform_set)
+        praw = dict(praw, **extra)
+        skipped = []
+        if styled_animation is not None and styled_animation["parameters"]["duration"] > (end - start) / 2:
+            # a preset's fade that does not fit this element's window is left out (and said so), not an error the caller
+            # could only avoid by writing an animation of their own
+            styled_animation = None
+            sources.pop("animation", None)
+            skipped.append("animation")
+        style_info = applied_summary(preset, brand_kit, sources)
+        if skipped and style_info is not None:
+            style_info["skipped"] = skipped
     parameters: Dict[str, Any] = {}
     for name, spec in pspec.items():
         if name not in praw:
@@ -587,12 +612,13 @@ def _element(value: Any, index: int, platform_set: bool = False) -> GraphicsElem
                                    {"field": f"{where}.parameters", "at_least_one_of": list(at_least_one)})
 
     animation: Optional[Animation] = None
-    if "animation" in obj:
-        animation = _animation(obj["animation"], etype, f"{where}.animation")
+    raw_animation = obj["animation"] if "animation" in obj else styled_animation
+    if raw_animation is not None:
+        animation = _animation(raw_animation, etype, f"{where}.animation")
         if animation.kind == "fade" and animation.parameters["duration"] > (end - start) / 2:
             raise MotionGraphicsError("INVALID_TIME_RANGE", f"{where}.animation: fade duration {animation.parameters['duration']}s does not fit within [{start}, {end}]",
                                        {"field": f"{where}.animation.parameters.duration"})
-    return GraphicsElement(element_id, etype, start, end, parameters, animation)
+    return GraphicsElement(element_id, etype, start, end, parameters, animation, style_info)
 
 
 def parse_request(document: Any) -> GraphicsDocument:
@@ -617,7 +643,14 @@ def parse_request(document: Any) -> GraphicsDocument:
         raise MotionGraphicsError("INVALID_REQUEST", f"document.elements has more than {MAX_ELEMENTS} entries", {"field": "elements", "count": len(raw_elements)})
     options_peek = top.get("options")
     platform_set = isinstance(options_peek, dict) and options_peek.get("platform") is not None
-    elements = [_element(e, i, platform_set) for i, e in enumerate(raw_elements)]
+    default_style: Optional[str] = None
+    brand_kit: Optional[Dict[str, str]] = None
+    if isinstance(options_peek, dict):
+        if options_peek.get("style") is not None:
+            default_style = style_name(options_peek["style"], "document.options.style")
+        if options_peek.get("brand_kit") is not None:
+            brand_kit = parse_brand_kit(options_peek["brand_kit"])
+    elements = [_element(e, i, platform_set, default_style, brand_kit) for i, e in enumerate(raw_elements)]
     seen: Dict[str, int] = {}
     for i, el in enumerate(elements):
         if el.element_id in seen:
@@ -626,7 +659,7 @@ def parse_request(document: Any) -> GraphicsDocument:
         seen[el.element_id] = i
 
     options_raw = top.get("options", {})
-    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform"), ())
+    options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform", "style", "brand_kit"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -656,4 +689,5 @@ def parse_request(document: Any) -> GraphicsDocument:
         raise MotionGraphicsError("INVALID_REQUEST", f"document.options.platform must be one of {PLATFORM_NAMES}: {platform!r}", {"field": "document.options.platform"})
 
     return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
-                             {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform})
+                             {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform,
+                              "style": default_style, "brand_kit": brand_kit})

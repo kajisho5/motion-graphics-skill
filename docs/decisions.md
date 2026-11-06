@@ -673,3 +673,40 @@ that 3.0 removed are internal to ffmpeg-skill.
 **Verified.** The full suite (504 tests, real renders included) passes against 3.0.0 on Python 3.11 with
 ffmpeg 6.1.1, and against 2.24.1 on Python 3.9. Before this change it already passed against 3.0.0: only the declared
 range was wrong. `dependencies` changes, so video-production-agent sees the new range when it re-pins (agent side).
+
+## ADR-24: named style presets fill optional parameters; a brand kit replaces their colours
+
+**Context.** "In the company colours" or "news style" should not need every colour and font spelled out on every element.
+Roadmap step 6 asks for named presets (swiss, minimal, neon, corporate, wafu, news) as typed bundles of parameters the
+elements already have, resolved from a brand kit when one is given, with no new animation.
+
+**Decision.** `styles.STYLE_PRESETS` is a fixed table. Each preset has four opaque colour roles (`primary`, `secondary`,
+`background`, `text`) and typed settings: `font_id` (a `fonts.FONT_REGISTRY` key), `box`, `box_opacity`, `border_width`,
+`margin` and `fade` (seconds or none). `styles.STYLE_TARGETS` maps, per element type, the parameters a preset may fill to a
+role or a setting. Every target is an existing optional parameter of that type, and `animation` (a fade) is a target only for
+`text_overlay` / `image_overlay`, the two types with a configurable fade. `meme` maps nothing: its look is fixed by the template.
+- *Request:* `element.style` (a preset name), `document.options.style` (the preset for every element without its own), and
+  `document.options.brand_kit` `{primary?, secondary?, background?, text?}` (RRGGBB or a colour name, no `@alpha`, because the
+  graphics templates draw these colours opaque, ADR-20). Unknown names and fields are `INVALID_REQUEST`.
+- *Precedence:* an explicit parameter > a brand kit role > the preset's role. A preset fills only the optional parameters the
+  request left out. The filled values pass through the same validation as the caller's own, in `model._element`.
+- *Safe zone:* with `options.platform`, a preset supplies no `margin`, because an omitted margin there is the destination's
+  safe zone (ADR-19).
+- *Fade:* a preset fade is added only when the element has no animation. A preset fade longer than half the element's window
+  is left out and listed in `style.skipped`. Otherwise the caller could only avoid an error by writing an animation of their own.
+- *Text box:* `box_color` is the background role at the preset's `box_opacity`, sent to ffmpeg-skill/overlay with `@alpha`,
+  which it accepts. With `box: false` no box colour is filled.
+- *Reporting:* each styled element carries `style {preset, brand_kit, applied: {parameter: preset|brand_kit}, skipped?}` in
+  validate/plan output and in the run response's `timeline`. Identity is unchanged in kind: it hashes the resolved parameters.
+
+**Why fill parameters rather than add new ones.** Nothing new reaches ffmpeg-skill, and nothing about an element type changes, so
+the contract's element types are unchanged. A preset is a named default that a caller picks, not a design choice this skill makes.
+
+**Consumers.** The contract gains a top-level `style_presets` block (presets, roles, targets, request fields, precedence) and three
+optional request fields (`request.shape`). No element type, parameter type, `execution`, `provenance` or `colors` entry changes,
+so video-production-agent's `check_contract()` passes and its fatal drift is unchanged; it uses presets only once it re-pins and
+sends the new fields.
+
+**Verified.** `tests/test_styles.py`: each preset is a contract entry whose values are typed and resolve for all 13 element types
+(argv included); a preset plus a brand kit uses the kit's colours on the graphics templates and the overlays; the precedence, the
+safe-zone rule and the skipped fade; and one real render of a styled document.

@@ -183,6 +183,15 @@ corners, border, rotation, gradient or fade. A checkout without `background.py` 
 `unsupported` in `doctor`, and a request for one is refused before anything renders (`TOOL_ERROR`, `details.reason:
 ffmpeg_skill_lacks_tool`).
 
+## Style presets and brand kit
+
+`element.style` or `document.options.style` names a preset (`swiss`, `minimal`, `neon`, `corporate`, `wafu`, `news`);
+`document.options.brand_kit` gives `primary` / `secondary` / `background` / `text` colours. A preset fills only optional
+parameters the request left out (colours, `font`, `box`, `box_color`, `border_width`, `margin`, and a `fade` on
+`text_overlay` / `image_overlay`); a brand kit colour replaces the preset's; an explicit parameter wins over both. Each styled
+element reports what was filled (`style.applied`). `contract --json` lists every preset and what each element type takes
+from it (`style_presets`). See ADR-24.
+
 ## Platform safe zones
 
 `options.platform` (`broadcast`, `facebook`, `instagram`, `linkedin`, `podcast`, `reels`, `shorts`, `tiktok`, `twitter`,

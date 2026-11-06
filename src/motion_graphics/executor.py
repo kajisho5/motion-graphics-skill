@@ -243,7 +243,7 @@ class Executor:
             "schema": RESPONSE_SCHEMA_ID, "skill": {"id": SKILL_ID, "version": VERSION}, "ok": True, "status": "ok", "dry_run": False,
             "output": {"path": str(output_path), "sha256": final_meta["sha256"], "size": final_meta["size"], "duration": final_meta["duration"],
                        "width": width, "height": height},
-            "timeline": [{"id": e.element_id, "type": e.type, "start": e.start, "end": e.end} for e in ordered],
+            "timeline": [dict({"id": e.element_id, "type": e.type, "start": e.start, "end": e.end}, **({"style": e.style} if e.style else {})) for e in ordered],
             "operations": [r.to_dict() for r in results],
             "reused": any_reused,
             "engine": dict(self.tool_versions),
