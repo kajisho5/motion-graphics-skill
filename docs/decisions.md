@@ -858,7 +858,8 @@ and of a refusal (a whole-frame guess would refuse documents for no reason), lis
 both `scale_percent` and `scale_width` are given, the box uses `scale_percent`, as ffmpeg-skill/overlay does.
 
 **Consumers.** A new top-level `reserved_regions` block in the contract and an optional request field; a `reserved_regions` key in the
-run and plan responses only when the request asks for it, documented in `response.success.run` / `.plan` (with the plan's `warnings`).
+run and plan responses only when the request asks for it, documented in `response.conditional` (the `run` / `plan` entries list the keys every response has; the plan's `warnings`
+is one of them).
 No element type, parameter, `execution`, `provenance` or `colors` entry changes, so the agent's `check_contract()` passes. Its pinned
 `response` block differs, which video-production-agent counts as fatal drift: it treats this release as unavailable until it re-pins
 (agent side).

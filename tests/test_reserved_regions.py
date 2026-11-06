@@ -107,7 +107,8 @@ def test_contract_documents_reserved_regions():
     c = skill_contract()["reserved_regions"]
     assert c["request_field"] == "options.reserved_regions" and set(c["default_end_screens"]) == {"16:9", "9:16", "1:1"}
     success = skill_contract()["response"]["success"]
-    assert "reserved_regions?" in success["run"] and "reserved_regions?" in success["plan"] and "warnings" in success["plan"]
+    assert skill_contract()["response"]["conditional"]["reserved_regions"]["in"] == ["run", "plan"] and "warnings" in success["plan"]
+    assert "reserved_regions" not in success["run"] and "reserved_regions" not in success["plan"]   # not on every response
     assert "on_overlap?" in c["shape"]
 
 
