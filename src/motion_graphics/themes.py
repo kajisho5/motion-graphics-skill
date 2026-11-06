@@ -155,17 +155,27 @@ def parse_theme_options(options: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return {"themes": dict(themes), "theme": chosen}
 
 
+def read_theme_document(path: Any, where: str) -> Any:
+    """The JSON document of a theme file: at most MAX_THEME_BYTES bytes (read as bytes, one byte past the limit to tell), decoded as
+    UTF-8, then parsed. The one reader for `load_theme` and `theme-check`, so both refuse the same files the same way."""
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read(MAX_THEME_BYTES + 1)
+    except OSError as e:
+        raise _fail(where, f"cannot read the theme file: {e}")
+    if len(raw) > MAX_THEME_BYTES:
+        raise _fail(where, f"theme file is larger than {MAX_THEME_BYTES} bytes")
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as e:
+        raise _fail(where, f"theme file is not valid UTF-8 JSON: {e}")
+
+
 def load_theme(policy: Any, path_text: str, where: str) -> Dict[str, Any]:
     """Read, validate and resolve one theme file: its font_file and logo path become PathPolicy-checked absolute paths."""
     from .canonical import sha256_file
     path = policy.resolve_input(path_text, where)
-    if path.stat().st_size > MAX_THEME_BYTES:
-        raise _fail(where, f"theme file is larger than {MAX_THEME_BYTES} bytes")
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        raise _fail(where, f"theme file is not valid JSON: {e}")
-    theme = parse_theme(doc, where)
+    theme = parse_theme(read_theme_document(path, where), where)
     base = path.parent
 
     def rel(p: str, what: str) -> str:

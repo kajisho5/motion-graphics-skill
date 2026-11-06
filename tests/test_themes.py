@@ -136,6 +136,30 @@ def test_theme_check_command(tmp_path):
     assert code != 0 and json.loads(out)["error"]["code"] == "INVALID_INPUT"
 
 
+def test_theme_check_and_load_theme_refuse_the_same_oversized_and_non_utf8_files(tmp_path):
+    from motion_graphics.themes import MAX_THEME_BYTES, load_theme
+    body = json.dumps(THEME_LOW)
+    exact = tmp_path / "exact.json"                      # exactly at the limit (padded with spaces): accepted by both
+    exact.write_bytes(body.encode("utf-8") + b" " * (MAX_THEME_BYTES - len(body.encode("utf-8"))))
+    big = tmp_path / "big.json"                          # one byte over: refused by both, with the same message
+    big.write_bytes(exact.read_bytes() + b" ")
+    multibyte = tmp_path / "multibyte.json"              # under the limit in characters, over it in bytes
+    multibyte.write_bytes(body.encode("utf-8") + "\u3000".encode("utf-8") * (MAX_THEME_BYTES // 3 + 1))
+    latin1 = tmp_path / "latin1.json"
+    latin1.write_bytes(json.dumps(dict(THEME_LOW, name="fog")).replace("fog", "f\u00f6g", 1).encode("latin-1"))
+    policy = PathPolicy(str(tmp_path))
+    assert load_theme(policy, str(exact), "t")["name"] == "fog"
+    code, out, _ = run_cli(["theme-check", str(exact), "--json"])
+    assert code == 0 and json.loads(out)["ok"]
+    for f, words in ((big, "larger than"), (multibyte, "larger than"), (latin1, "not valid UTF-8")):
+        with pytest.raises(MotionGraphicsError) as e:
+            load_theme(policy, str(f), "t")
+        assert e.value.code == "INVALID_INPUT" and e.value.details["reason"] == "bad_theme" and words in e.value.message
+        code, out, _ = run_cli(["theme-check", str(f), "--json"])
+        err = json.loads(out)["error"]
+        assert code != 0 and err["code"] == "INVALID_INPUT" and err["details"]["reason"] == "bad_theme" and words in err["message"]
+
+
 # ---- renders
 def _ff(*args):
     subprocess.run(["ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error", *args], check=True)
