@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.13 — 2026-11-06
+
+- Record why layer export cannot be built yet (roadmap step 8) (#39) (ff3fce4)
+
 ## v0.2.12 — 2026-11-06
 
 - Add the rendered_layer element: a pre-rendered alpha clip with IN / LOOP / OUT (roadmap step 7) (#38) (22a3ba0)
