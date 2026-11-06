@@ -23,6 +23,7 @@ from .canonical import sha256_file, stable_hash
 from .colors import template_color
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
+from .layers import has_alpha, layer_placements, place_args
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
 from .security import PathPolicy
 
@@ -140,6 +141,24 @@ class Executor:
                     raise MotionGraphicsError("INVALID_INPUT", f"elements[{el.element_id}].parameters.video_path has no video stream: {video_overlay_path}",
                                                {"element_id": el.element_id, "path": str(video_overlay_path)})
                 resolved_assets[el.element_id] = {"path": str(video_overlay_path), "sha256": sha256_file(str(video_overlay_path)), "size": video_overlay_path.stat().st_size}
+            if el.type == "rendered_layer":
+                # ADR-25: the layer must decode with alpha; its duration decides where the IN / LOOP / OUT pieces go
+                layer_path = self.policy.resolve_input(el.parameters["video_path"], f"elements[{el.element_id}].parameters.video_path")
+                layer_meta = self.skill.probe(str(layer_path), self.timeout)
+                lv = layer_meta.get("video") or {}
+                if not lv:
+                    raise MotionGraphicsError("INVALID_INPUT", f"elements[{el.element_id}].parameters.video_path has no video stream: {layer_path}",
+                                              {"element_id": el.element_id, "path": str(layer_path)})
+                if not has_alpha(lv.get("pix_fmt")):
+                    raise MotionGraphicsError("INVALID_INPUT", f"elements[{el.element_id}].parameters.video_path does not decode with an alpha channel "
+                                              f"(pixel format {lv.get('pix_fmt')!r}): give a ProRes 4444, QuickTime Animation or PNG-in-MOV layer "
+                                              f"(a VP9 alpha WebM decodes without its alpha here); an opaque clip is a video_overlay",
+                                              {"element_id": el.element_id, "path": str(layer_path), "pix_fmt": lv.get("pix_fmt"), "reason": "layer_without_alpha"})
+                layer_duration = float(lv.get("duration") or layer_meta.get("duration") or lv.get("tagged_duration") or 0.0)
+                pieces, summary = layer_placements(el.start, el.end, layer_duration, el.parameters["in_duration"], el.parameters["out_duration"],
+                                                   el.parameters["loop"], f"elements[{el.element_id}]")
+                resolved_assets[el.element_id] = {"path": str(layer_path), "sha256": sha256_file(str(layer_path)), "size": layer_path.stat().st_size,
+                                                  "pieces": pieces, "segments": summary}
             if el.type == "text_overlay" and el.parameters.get("font"):
                 resolved_fonts[el.element_id] = resolve_font(el.parameters["font"], self.policy)
             elif el.type == "text_overlay":
@@ -279,6 +298,12 @@ class Executor:
                                           f"which the ffmpeg-skill at {info.directory} (version {info.version}) does not have",
                                           {"reason": "ffmpeg_skill_lacks_template", "element_id": el.element_id, "type": el.type, "template": template,
                                            "ffmpeg_skill_version": info.version}, retryable=False)
+        for el in doc.ordered_elements():
+            if el.type == "rendered_layer" and not info.takes_place():
+                raise MotionGraphicsError("TOOL_ERROR", f"elements[{el.element_id}]: the 'rendered_layer' element type needs ffmpeg-skill/overlay --place, which the "
+                                          f"ffmpeg-skill at {info.directory} (version {info.version}) does not have",
+                                          {"reason": "ffmpeg_skill_lacks_flag", "element_id": el.element_id, "type": el.type, "flag": "ffmpeg-skill/overlay --place",
+                                           "ffmpeg_skill_version": info.version}, retryable=False)
         platform = doc.options.get("platform")
         if platform is None:
             return
@@ -302,6 +327,8 @@ class Executor:
             d["generator"] = f"ffmpeg-skill/{ELEMENT_TYPES[el.type]['generator']}"
         if el.element_id in assets:
             d["asset"] = {"sha256": assets[el.element_id]["sha256"], "size": assets[el.element_id]["size"]}
+            if "segments" in assets[el.element_id]:
+                d["segments"] = assets[el.element_id]["segments"]
         if el.element_id in fonts_:
             d["font"] = fonts_[el.element_id].to_provenance()
         return d
@@ -314,6 +341,8 @@ class Executor:
             params["image_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
         if "video_path" in params and asset is not None:
             params["video_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
+        if asset is not None and "segments" in asset:
+            params["segments"] = asset["segments"]  # rendered_layer: where its pieces go (ADR-25), part of the identity
         if font is not None:
             params["font"] = font.to_provenance()
         return params
@@ -382,8 +411,9 @@ class Executor:
         argv = [stage_input, "-o", stage_output, "--position", p["position"]]
         if "margin" in p:  # absent only under document.options.platform with no explicit margin: the safe zone applies
             argv += ["--margin", str(p["margin"])]
-        argv += ["--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), "--opacity", fmt_number(p["opacity"]),
-                 *self._encode_flags("overlay", crf, preset)]
+        if el.type != "rendered_layer":  # its --place pieces say when it shows (overlay refuses --start/--end with --place)
+            argv += ["--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end)]
+        argv += ["--opacity", fmt_number(p["opacity"]), *self._encode_flags("overlay", crf, preset)]
         if audio_stream is not None:
             argv += ["--audio-stream", str(audio_stream)]
         if platform is not None:
@@ -419,6 +449,13 @@ class Executor:
         elif el.type == "image_overlay":
             assert asset is not None
             argv += ["--image", asset["path"]]
+            if p.get("scale_width"):
+                argv += ["--scale", str(p["scale_width"])]
+            if p.get("scale_percent") is not None:
+                argv += ["--scale-percent", fmt_number(p["scale_percent"])]
+        elif el.type == "rendered_layer":
+            assert asset is not None
+            argv += ["--video", asset["path"], *place_args(asset["pieces"])]
             if p.get("scale_width"):
                 argv += ["--scale", str(p["scale_width"])]
             if p.get("scale_percent") is not None:

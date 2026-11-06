@@ -42,7 +42,7 @@ CAPABILITY_IDS: Dict[str, str] = {
     "bug": "motion_graphics.bug", "chapter": "motion_graphics.chapter", "progress": "motion_graphics.progress",
     "countdown": "motion_graphics.countdown", "video_overlay": "motion_graphics.video_overlay",
     "sticker": "motion_graphics.sticker", "hook": "motion_graphics.hook", "meme": "motion_graphics.meme",
-    "shape": "motion_graphics.shape",
+    "shape": "motion_graphics.shape", "rendered_layer": "motion_graphics.rendered_layer",
 }
 
 

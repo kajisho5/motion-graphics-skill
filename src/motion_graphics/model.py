@@ -295,6 +295,32 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:color", "filter:overlay", "filter:colorchannelmixer", "encoder:libx264",
                                   "ffmpeg-skill-tool:background"],
     },
+    # rendered_layer (ADR-25): a pre-rendered clip with an alpha channel (animated graphics made elsewhere), laid on the video by
+    # ffmpeg-skill/overlay --video with one --place per piece: its IN segment at the element's start, its LOOP segment repeated
+    # to fill the window, its OUT segment ending at the element's end. The motion is in the clip; this skill only places it.
+    "rendered_layer": {
+        "tool": "overlay", "mode": "layer",
+        "description": "Place a pre-rendered clip with an alpha channel (e.g. an animated lower third exported as ProRes 4444) at a position "
+                       "over the element's window (ffmpeg-skill/overlay --video --place). in_duration seconds from the clip's start play "
+                       "at the element's start, out_duration seconds from its end finish at the element's end, and the part between them "
+                       "(the loop) is repeated to fill the rest when loop is true, or played once and cut when false. The layer must "
+                       "decode with alpha (a yuva/rgba pixel format: ProRes 4444, QuickTime Animation, PNG in MOV); a VP9 alpha WebM is "
+                       "refused because overlay decodes it without its alpha. No fade or other motion of its own: the animation is the clip's.",
+        "animation": "none",
+        "parameters": {
+            "video_path": {"type": _PATH, "required": True},
+            "position": {"type": _POS, "required": False, "default": "center"},
+            "margin": {"type": _INT, "required": False, "min": 0, "max": 2000, "default": 24, "platform_replaces_default": True},
+            "scale_width": {"type": _INT, "required": False, "min": 1, "max": 8192},
+            "scale_percent": {"type": _NUM, "required": False, "min": 0.1, "max": 100.0},
+            "opacity": {"type": _NUM, "required": False, "min": 0.0, "max": 1.0, "default": 1.0},
+            "in_duration": {"type": _NUM, "required": False, "min": 0.0, "max": 60.0, "default": 0.0},
+            "out_duration": {"type": _NUM, "required": False, "min": 0.0, "max": 60.0, "default": 0.0},
+            "loop": {"type": _BOOL, "required": False, "default": True},
+        },
+        "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:overlay", "filter:scale", "filter:colorchannelmixer", "encoder:libx264",
+                                  "ffmpeg-skill-flag:overlay.place"],
+    },
 }
 # Requested in STEP 1 / STEP 24 but not implemented in this contract: no delegate tool renders them without this
 # skill building a raw filter string itself, which STEP 7 / STEP 10 forbid. Listed so contract/doctor never claim
