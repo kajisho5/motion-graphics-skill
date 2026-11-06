@@ -205,7 +205,10 @@ def test_two_themes_render_the_same_document_in_their_own_colours_and_fonts(skil
             assert ops[eid]["parameters"]["font"]["kind"] == ("system" if name == "a" else "file")
             used = ops[eid].get("font_used")
             if used is not None:
-                assert (used.get("family") == "DejaVu Serif") if name == "a" else (used.get("file") == "font.ttf"), (name, used)
+                if name == "a":   # asked for the theme's registry font; drawn with it unless the machine lacks it (then said so)
+                    assert used.get("asked") == "DejaVu Serif" and (used.get("family") == "DejaVu Serif" or used.get("substituted") is True), used
+                else:
+                    assert used.get("file") == "font.ttf", (name, used)
             else:  # an older checkout reports no font_used: the ffmpeg command it ran names the font
                 assert (("DejaVu Serif" in sent) or ("DejaVuSerif" in sent)) if name == "a" else ("font.ttf" in sent), (name, sent[:500])
     assert out["a"]["output"]["sha256"] != out["b"]["output"]["sha256"]
