@@ -141,7 +141,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "lower-thirds":
         from .csvrows import lower_thirds_document
         try:
-            with open(args.csv, "r", encoding="utf-8", newline="") as fh:
+            with open(args.csv, "r", encoding="utf-8-sig", newline="") as fh:
                 text = fh.read(4 * 1024 * 1024 + 1)
             if len(text) > 4 * 1024 * 1024:
                 raise MotionGraphicsError("INVALID_REQUEST", "the CSV is larger than 4 MiB")
@@ -151,7 +151,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             doc = _error_document(MotionGraphicsError("INVALID_REQUEST", f"cannot read the CSV: {e}"), True)
         except MotionGraphicsError as e:
             doc = _error_document(e, True)
-        sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+        # ASCII-escaped: the request carries names in any script, and a console encoding such as cp1252 (Windows) cannot
+        # print them as text; the escaped JSON is the same document under every encoding
+        sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=True) + "\n")
         return 0 if doc.get("ok", True) else EXIT_CODES.get(doc["error"]["code"], EXIT_CODES["INTERNAL_ERROR"])
     dry_run = args.cmd == "plan" or bool(getattr(args, "dry_run", False))
     try:
