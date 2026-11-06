@@ -774,5 +774,5 @@ the graphics in an NLE. The rendered-layer element (ADR-25) already covers the o
 **What would unblock it (a request for ffmpeg-skill, not changed here):** a transparent canvas input for graphics/overlay (for example
 `background.py` writing a fully transparent clip of a given size, rate and length in an alpha codec) and graphics/overlay keeping the
 input's alpha through to an alpha output (`--codec prores4444` or `qtrle`), verified by reading the alpha back as `export.py` already
-does. With that, each element is one more typed call on a transparent canvas of the programme's size and timing, the manifest comes from
-the boxes ADR-28 already computes, and the PSNR check is an overlay of each layer over the clean programme.
+does. With that, each element is one more typed call on a transparent canvas of the programme's size and timing, the manifest's boxes
+come from the same template layouts the renders use, and the PSNR check is an overlay of each layer over the clean programme.
