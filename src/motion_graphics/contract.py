@@ -14,6 +14,7 @@ from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
 from .styles import contract_section as style_presets_section
+from .regions import contract_section as reserved_regions_section
 from .textfit import contract_section as text_fit_section
 from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FIT_FIELDS, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, PLATFORM_NAMES, POSITION_NAMES,
                     REQUEST_SCHEMA_ID, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES)
@@ -143,6 +144,8 @@ def skill_contract() -> Dict[str, Any]:
         "style_presets": style_presets_section(),
         # ADR-27: lower_third / title text shrunk and broken to a box
         "text_fit": text_fit_section({k: _param_schema(v) for k, v in FIT_FIELDS.items()}),
+        # ADR-28: YouTube end-screen elements and card teasers as reserved regions
+        "reserved_regions": reserved_regions_section(),
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
         "fonts": {"registry": {fid: spec["family"] for fid, spec in FONT_REGISTRY.items()}, "default_font_id": DEFAULT_FONT_ID,
                   "custom_font_file": {"allowed_extensions": list(ALLOWED_FONT_EXTENSIONS), "path_policy": True, "provenance": "font_file_hash (sha256)"},
@@ -180,15 +183,20 @@ def skill_contract() -> Dict[str, Any]:
                               "elements": [{"id": "id", "type": "|".join(sorted(ELEMENT_TYPES)), "start": 0, "end": 1,
                                             "parameters": {"...": "see element_types[].parameters"}, "animation?": {"kind": "fade", "parameters": {"duration": 0.5}}}],
                               "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0, "platform?": "tiktok",
-                                           "style?": "news", "brand_kit?": {"primary?": "RRGGBB", "secondary?": "RRGGBB", "background?": "RRGGBB", "text?": "RRGGBB"}},
+                                           "style?": "news", "reserved_regions?": {"end_screen?": {"duration?": 20}, "cards?": [{"time": 30}], "on_overlap?": "report"}, "brand_kit?": {"primary?": "RRGGBB", "secondary?": "RRGGBB", "background?": "RRGGBB", "text?": "RRGGBB"}},
                               "elements[].style?": "a style_presets name",
                               "elements[].fit?": {"width": 600, "max_lines?": 2, "min_scale?": 0.6, "profile?": "ja-kinsoku", "lang?": "ja"}}},
         "response": {"schema": f"{SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION}",
+                     # keys a run / plan response carries only when the request asks for them (success.run / success.plan list the
+                     # keys every response has)
+                     "conditional": {"reserved_regions": {"in": ["run", "plan"], "when": "options.reserved_regions is given",
+                                                          "shape": "see reserved_regions.result"}},
                      "success": {
                          "run": {"ok": True, "status": "ok", "dry_run": False, "output": "{path, sha256, size, duration, width, height}",
                                  "timeline": "[{id, type, start, end}]", "operations": "[StageResult]", "reused": "bool", "engine": {}, "provenance": {},
                                  "warnings": "[str] (e.g. a stage's dropped_non_av_streams surfaced as a warning; empty when there is nothing to report)"},
                          "plan": {"ok": True, "status": "ok", "dry_run": True, "plan": "{document_id, video, output: {path}, timeline: [element + planned tool/asset/font]}",
+                                  "warnings": "[str] (e.g. one per reserved-region overlap; empty when there is nothing to report)",
                                   "note": "produced by `plan`, or `run --dry-run`; writes no media; has no output/operations/provenance keys"},
                          "validate": {"ok": True, "status": "ok", "dry_run": True, "validation": "{ok: true, elements: [GraphicsElement, in render order]}",
                                       "note": "produced by `validate` only; structural check alone, no file-system access, no output/operations/plan keys"},

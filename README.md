@@ -206,6 +206,13 @@ except that ffmpeg-skill treats an explicit `24` (its own default) as not given.
 
 An ffmpeg-skill without `--platform` refuses such a request before anything renders (`ffmpeg_skill_lacks_platform_flag`).
 
+## YouTube end screens and cards
+
+`options.reserved_regions` gives the regions YouTube covers: `end_screen {duration (5-20 s), elements [{x, y, width,
+height}] or the stated default layout}` and `cards [{time, duration?, region?}]` (top-right by default). Every element's
+box is checked against them while both are on screen; each overlap is reported (`reserved_regions.overlaps`, one warning
+each), or with `on_overlap: refuse` the request is refused before rendering. Nothing is moved. See ADR-28.
+
 ## Video-on-video / picture-in-picture / chroma-key
 
 `video_overlay` composites a second video as a PiP layer, mirroring `image_overlay`'s position/margin/scale/opacity
