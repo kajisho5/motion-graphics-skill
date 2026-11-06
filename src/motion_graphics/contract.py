@@ -190,8 +190,11 @@ def skill_contract() -> Dict[str, Any]:
                      "success": {
                          "run": {"ok": True, "status": "ok", "dry_run": False, "output": "{path, sha256, size, duration, width, height}",
                                  "timeline": "[{id, type, start, end}]", "operations": "[StageResult]", "reused": "bool", "engine": {}, "provenance": {},
-                                 "warnings": "[str] (e.g. a stage's dropped_non_av_streams surfaced as a warning; empty when there is nothing to report)"},
+                                 "warnings": "[str] (e.g. a stage's dropped_non_av_streams surfaced as a warning; empty when there is nothing to report)",
+                                 "reserved_regions?": "present only when options.reserved_regions is given: see reserved_regions.result"},
                          "plan": {"ok": True, "status": "ok", "dry_run": True, "plan": "{document_id, video, output: {path}, timeline: [element + planned tool/asset/font]}",
+                                  "reserved_regions?": "present only when options.reserved_regions is given: see reserved_regions.result",
+                                  "warnings": "[str] (e.g. one per reserved-region overlap; empty when there is nothing to report)",
                                   "note": "produced by `plan`, or `run --dry-run`; writes no media; has no output/operations/provenance keys"},
                          "validate": {"ok": True, "status": "ok", "dry_run": True, "validation": "{ok: true, elements: [GraphicsElement, in render order]}",
                                       "note": "produced by `validate` only; structural check alone, no file-system access, no output/operations/plan keys"},

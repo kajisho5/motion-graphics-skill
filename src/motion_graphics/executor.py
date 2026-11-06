@@ -519,7 +519,8 @@ class Executor:
             boxes.append({"id": el.element_id, "type": el.type, "start": el.start, "end": el.end, "boxes": b, "precision": precision})
         found = overlaps(boxes, regions)
         report = {"on_overlap": spec["on_overlap"], "regions": [dict(r, box=list(r["box"])) for r in regions], "overlaps": found,
-                  "element_boxes": [{"id": b["id"], "boxes": [list(x) for x in b["boxes"]], "precision": b["precision"]} for b in boxes]}
+                  "element_boxes": [{"id": b["id"], "boxes": [list(x) for x in b["boxes"]], "precision": b["precision"]} for b in boxes],
+                  "unmeasured": [b["id"] for b in boxes if b["precision"] == "unmeasured"]}
         if found and spec["on_overlap"] == "refuse":
             raise MotionGraphicsError("INVALID_REQUEST", f"{len(found)} element(s) overlap a reserved YouTube region while it is on screen: "
                                       + ", ".join(f"{o['element_id']} under {o['region']['kind']} {o['region']['id']} at {o['time'][0]:g}-{o['time'][1]:g}s" for o in found),
@@ -530,8 +531,9 @@ class Executor:
     def _region_warnings(reserved: Optional[Dict[str, Any]]) -> List[str]:
         if not reserved:
             return []
-        return [f"elements[{o['element_id']}] ({o['type']}) overlaps the {o['region']['kind'].replace('_', ' ')} region {o['region']['id']!r} "
-                f"from {o['time'][0]:g}s to {o['time'][1]:g}s (box {o['precision']})" for o in reserved["overlaps"]]
+        return ([f"elements[{o['element_id']}] ({o['type']}) overlaps the {o['region']['kind'].replace('_', ' ')} region {o['region']['id']!r} "
+                 f"from {o['time'][0]:g}s to {o['time'][1]:g}s (box {o['precision']})" for o in reserved["overlaps"]]
+                + [f"elements[{eid}]: its size could not be measured, so it was not checked against the reserved regions" for eid in reserved.get("unmeasured", [])])
 
     # ---- text fit (ADR-27)
     def _fit(self, el: GraphicsElement, width: int, height: int) -> Dict[str, Any]:

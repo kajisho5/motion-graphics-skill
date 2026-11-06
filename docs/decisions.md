@@ -853,9 +853,15 @@ band and digit sizes of the other templates, with ffmpeg-skill's default 48 px m
 chosen size and lines are used when the element has one. Under `options.platform` the safe-zone margins are not modelled, so a box
 without an explicit margin is `estimated`.
 
+**Unmeasured elements.** An image, video or rendered layer whose size could not be probed gets no box: it is left out of the check
+and of a refusal (a whole-frame guess would refuse documents for no reason), listed in `reserved_regions.unmeasured`, and warned. When
+both `scale_percent` and `scale_width` are given, the box uses `scale_percent`, as ffmpeg-skill/overlay does.
+
 **Consumers.** A new top-level `reserved_regions` block in the contract and an optional request field; a `reserved_regions` key in the
-run and plan responses only when the request asks for it. No element type, parameter, `execution`, `provenance` or `colors` entry
-changes, so the agent's `check_contract()` passes and its fatal drift is unchanged.
+run and plan responses only when the request asks for it, documented in `response.success.run` / `.plan` (with the plan's `warnings`).
+No element type, parameter, `execution`, `provenance` or `colors` entry changes, so the agent's `check_contract()` passes. Its pinned
+`response` block differs, which video-production-agent counts as fatal drift: it treats this release as unavailable until it re-pins
+(agent side).
 
 **Verified.** `tests/test_reserved_regions.py`: a title under the default end screen during it and another title under a card
 teaser at its time are both reported (a third element on screen at neither time is not); with end-screen positions given as input,

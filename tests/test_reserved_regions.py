@@ -65,6 +65,36 @@ def test_element_boxes_exact_for_a_shape_and_estimated_for_templates():
     assert element_boxes(bug, W, H)[1] == "estimated" and x + w == W - 48 and y == 48
 
 
+def test_scale_percent_wins_over_scale_width_as_in_the_renderer():
+    from conftest import image_overlay_element
+    el = parse_request(request_doc([image_overlay_element(position="top-left", margin=0, scale_width=200, scale_percent=25.0)])).elements[0]
+    assert element_boxes(el, W, H, asset_size=(64, 32)) == ([(0, 0, 80, 40)], "exact")       # 25 % of 320, not 200
+    only_width = parse_request(request_doc([image_overlay_element(position="top-left", margin=0, scale_width=200)])).elements[0]
+    assert element_boxes(only_width, W, H, asset_size=(64, 32)) == ([(0, 0, 200, 100)], "exact")
+
+
+def test_an_unmeasured_asset_has_no_box_and_meets_no_region():
+    from conftest import image_overlay_element
+    el = parse_request(request_doc([image_overlay_element(position="center")])).elements[0]
+    assert element_boxes(el, W, H, asset_size=None) == ([], "unmeasured")
+    els = [{"id": "img1", "type": "image_overlay", "start": 0.0, "end": 2.0, "boxes": [], "precision": "unmeasured"}]
+    reg = [{"kind": "card_teaser", "id": "c", "box": (0, 0, W, H), "start": 0.0, "end": 2.0, "source": "input"}]
+    assert overlaps(els, reg) == []
+
+
+def test_an_unmeasured_element_is_reported_not_refused():
+    from motion_graphics.executor import Executor
+    from motion_graphics.security import PathPolicy
+    doc = parse_request(request_doc([dict(title_element("t", start=0.0, end=1.0, title="x"))],
+                                    options={"reserved_regions": {"cards": [{"time": 0.0, "region": {"x": 0, "y": 0, "width": 10, "height": 10}}],
+                                                                  "on_overlap": "refuse"}}))
+    ex = Executor(PathPolicy("."), skill=None)
+    img = parse_request(request_doc([{"id": "img", "type": "video_overlay", "start": 0.0, "end": 1.0, "parameters": {"video_path": "v.mp4"}}])).elements[0]
+    rep = ex._reserved_regions(doc, (img,), {"img": {"path": "v.mp4", "dims": (0, 0)}}, {}, W, H, 6.0)
+    assert rep["unmeasured"] == ["img"] and rep["overlaps"] == []
+    assert any("could not be measured" in w for w in Executor._region_warnings(rep))
+
+
 def test_overlap_needs_both_time_and_space():
     els = [{"id": "a", "type": "title", "start": 0.0, "end": 2.0, "boxes": [(0, 0, 50, 50)], "precision": "estimated"}]
     reg = [{"kind": "card_teaser", "id": "c", "box": (40, 40, 20, 20), "start": 1.5, "end": 3.0, "source": "input"}]
@@ -76,6 +106,8 @@ def test_overlap_needs_both_time_and_space():
 def test_contract_documents_reserved_regions():
     c = skill_contract()["reserved_regions"]
     assert c["request_field"] == "options.reserved_regions" and set(c["default_end_screens"]) == {"16:9", "9:16", "1:1"}
+    success = skill_contract()["response"]["success"]
+    assert "reserved_regions?" in success["run"] and "reserved_regions?" in success["plan"] and "warnings" in success["plan"]
     assert "on_overlap?" in c["shape"]
 
 

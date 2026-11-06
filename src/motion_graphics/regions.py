@@ -160,7 +160,8 @@ def _block(text: str, size: int, max_px: int) -> Tuple[int, int]:
 
 def element_boxes(el: Any, W: int, H: int, asset_size: Optional[Tuple[int, int]] = None,
                   fit: Optional[Dict[str, Any]] = None) -> Tuple[List[Box], str]:
-    """The boxes an element draws in at rest, and "exact" or "estimated"."""
+    """The boxes an element draws in at rest, and "exact", "estimated" or "unmeasured" (an image / video / layer whose size could
+    not be probed: no box, so it is left out of the overlap check and of a refusal, and the report says so)."""
     p = el.parameters
     t = el.type
     m = DEFAULT_TEMPLATE_MARGIN
@@ -171,12 +172,13 @@ def element_boxes(el: Any, W: int, H: int, asset_size: Optional[Tuple[int, int]]
         return [(x, y, p["width"], p["height"])], ("exact" if "margin" in p else "estimated")
     if t in ("image_overlay", "video_overlay", "rendered_layer"):
         if asset_size is None:
-            return [(0, 0, W, H)], "estimated"
+            return [], "unmeasured"
         w0, h0 = asset_size
-        if p.get("scale_width"):
-            w = p["scale_width"]
-        elif p.get("scale_percent") is not None:
+        # ffmpeg-skill/overlay applies --scale-percent when both are given, so the box does too
+        if p.get("scale_percent") is not None:
             w = int(W * p["scale_percent"] / 100.0)
+        elif p.get("scale_width"):
+            w = p["scale_width"]
         else:
             w = w0
         h = int(round(h0 * w / float(w0))) if w0 else h0
@@ -283,9 +285,11 @@ def contract_section() -> Dict[str, Any]:
         "default_end_screen_units": "x and w are fractions of the frame width, y of its height; a 16:9 element's height is w x 9/16, a 1:1 element's is w; "
                                     "aspect class: width/height >= 1.2 is 16:9, <= 0.83 is 9:16, otherwise 1:1",
         "default_card_area": dict(DEFAULT_CARD_AREA),
-        "element_boxes": "exact for a shape, and for an image / video / rendered layer of probed size with an explicit margin; estimated from the template "
+        "element_boxes": "exact for a shape, and for an image / video / rendered layer of probed size with an explicit margin (scale_percent wins over "
+                         "scale_width, as in the renderer); unmeasured (no box: left out of the check and of a refusal, listed in `unmeasured`) "
+                         "for an image / video / layer whose size could not be probed; estimated from the template "
                          "layout and the text_fit width table otherwise (the result says which)",
         "result": "response.reserved_regions {on_overlap, regions [{kind, id, box, start, end, source}], overlaps [{element_id, type, region, time, element_box, area, "
-                  "precision}], element_boxes}; one warning per overlap",
+                  "precision}], element_boxes, unmeasured [element id]}; one warning per overlap and one per unmeasured element",
         "note": "this skill moves nothing: it reports (or refuses); where a graphic goes is the caller's decision",
     }
