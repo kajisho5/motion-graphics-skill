@@ -710,3 +710,44 @@ sends the new fields.
 **Verified.** `tests/test_styles.py`: each preset is a contract entry whose values are typed and resolve for all 13 element types
 (argv included); a preset plus a brand kit uses the kit's colours on the graphics templates and the overlays; the precedence, the
 safe-zone rule and the skipped fade; and one real render of a styled document.
+
+## ADR-25: `rendered_layer` places a pre-rendered alpha clip with ffmpeg-skill/overlay `--place`, one piece per segment
+
+**Context.** Animation beyond a fade is not this skill's to build (ADR-1/ADR-2), and typed keyframes on ffmpeg-skill/overlay
+are not available. Animated graphics are rendered elsewhere as clips with alpha. Roadmap step 7 asks to place such a clip on the
+same timeline as the other elements, with its IN / LOOP / OUT segments, the loop repeated to the element's length.
+
+**Decision.** A `rendered_layer` element type, one stage, one ffmpeg-skill/overlay call: `--video <clip>` plus one
+`--place SRC_START-SRC_END@AT` per piece. `--place` (ffmpeg-skill 2.x) shows only that range of the layer from AT on the main
+timeline and leaves the picture untouched elsewhere; it cannot be combined with `--start`/`--end`/`--fade`, so none of those is sent.
+- *Segments:* `in_duration` (default 0) is the clip's first part, played at the element's start; `out_duration` (default 0) is
+  its last part, ending at the element's end; the part between is the loop. With `loop: true` (default) the loop is repeated to
+  fill the window, the last repeat cut short; with `loop: false` it plays once and is cut, and a window longer than it is
+  `INVALID_TIME_RANGE`. No segments and `loop: true` loops the whole clip.
+- *Arithmetic:* `layers.layer_placements` works in whole milliseconds, with the clip's probed duration floored, so consecutive
+  pieces touch exactly (overlay refuses overlapping pieces) and no piece asks for a picture past the clip's end. In + out longer
+  than the clip is `INVALID_REQUEST`, longer than the window `INVALID_TIME_RANGE`; a fill with no loop segment is `INVALID_REQUEST`.
+  The number of pieces is bounded (`MAX_LAYER_PIECES` = 120), like `countdown.count_from` (ADR-14), because each is one trim and
+  one overlay in the tool's filter graph.
+- *Alpha:* the clip is probed before anything renders. Its pixel format must carry alpha (`yuva*`, `rgba`, `argb`, `gbrap`, ...);
+  otherwise `INVALID_INPUT` (`layer_without_alpha`). A VP9 alpha WebM probes as `yuv420p`: its alpha is in side data that the
+  decoder ffmpeg-skill/overlay uses drops (checked: it composites opaque), so it is refused, with ProRes 4444 / QuickTime Animation /
+  PNG-in-MOV named as what works. An opaque clip is a `video_overlay`.
+- *Checkout:* `--place` is an optional overlay flag (`OPTIONAL_FLAGS`), detected like the others (ADR-18). doctor reports
+  `ffmpeg-skill-flag:overlay.place`; without it `rendered_layer` is unsupported and refused before rendering (`TOOL_ERROR`,
+  `ffmpeg_skill_lacks_flag`, not retryable). 0.12.5 lacks it; 2.24.1, 3.0.0 and main have it.
+- *Reporting and identity:* the stage's `parameters` carry `segments` {in, loop {source, repeats, last_cut}, out, pieces,
+  layer_duration}; the plan entry carries the same. They are part of the stage identity together with the clip's sha256.
+- *Other parameters:* `position` (default `center`), `margin` (platform safe zone as on the other overlays), `scale_width`,
+  `scale_percent`, `opacity`. `animation` is `"none"`: the motion is the clip's.
+
+**Not here.** A stinger between two clips is cut by video-editing-skill, not placed here.
+
+**Consumers.** A new element type and Capability id (`motion_graphics.rendered_layer`); `place` in `ffmpeg_skill.optional_flags`
+/ `flags_used`. No existing element type, parameter type, `execution`, `provenance` or `colors` entry changes, so the agent's
+`check_contract()` passes and its fatal drift is unchanged; it gets the element type when it re-pins.
+
+**Verified.** `tests/test_rendered_layer.py` renders a 3 s ProRes 4444 layer (opaque on its left half; IN red, LOOP green in four
+0.5 s steps, OUT blue) with in 0.5 s and out 0.5 s for 6 s, and reads the frames back: red in the in, green in the loop with the
+same phase 2 s apart and a later step one phase on, blue in the out, and the video unchanged under the transparent half. On a
+checkout without `--place` the same test asserts the up-front refusal. Run against ffmpeg-skill 3.2.0 (main), 2.24.1 and 0.12.5.

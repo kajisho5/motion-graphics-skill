@@ -76,6 +76,7 @@ STYLE_TARGETS: Dict[str, Dict[str, str]] = {
     "image_overlay": {"margin": "margin", "animation": "fade"},
     "video_overlay": {"margin": "margin"},
     "shape": {"margin": "margin"},
+    "rendered_layer": {"margin": "margin"},
 }
 
 BRAND_KIT_FIELDS = ROLES

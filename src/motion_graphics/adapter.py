@@ -73,7 +73,10 @@ FLAG_ALTERNATIVES: Dict[str, Dict[str, Tuple[str, ...]]] = {
 # checked before anything renders) is the consent; the flag only passes it on.
 # `platform` (ffmpeg-skill/graphics and /overlay --platform: margins become a destination's safe zone) is emitted only
 # when document.options.platform is set, and refused up front when the checkout has no such flag.
-OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite", "platform"), "overlay": ("overwrite", "platform")}
+# `place` (ffmpeg-skill/overlay --place SRC_START-SRC_END@AT, repeatable, with --video; 2.x) lays pieces of a layer at their own
+# times: the rendered_layer element's IN / LOOP / OUT segments (ADR-25). Emitted only for that element type, which is refused up
+# front when the checkout lacks it.
+OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"graphics": ("overwrite", "platform"), "overlay": ("overwrite", "platform", "place")}
 # graphics templates the oldest verified ffmpeg-skill (0.12.5) does not have. An element type built on one needs the
 # name in the checkout's `--template` choices AND the flags listed here; the element type is refused up front when the
 # checkout lacks either (never attempted and left to fail inside the tool), and doctor reports it unsupported.
@@ -177,6 +180,10 @@ class SkillInfo:
     def takes_platform(self, tool: str) -> bool:
         return bool((self.features.get("platform_flag") or {}).get(tool))
 
+    def takes_place(self) -> bool:
+        """Whether this checkout's ffmpeg-skill/overlay has --place (rendered_layer, ADR-25)."""
+        return bool(self.features.get("place_flag"))
+
     def platform_names(self, tool: str) -> Optional[List[str]]:
         """The destinations ffmpeg-skill/<tool> --platform accepts in this checkout, or None when its choices could not be read."""
         names = (self.features.get("platforms") or {}).get(tool)
@@ -235,6 +242,7 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
     platform_flag: Dict[str, bool] = {}
     platforms: Dict[str, Optional[List[str]]] = {}
     template_support: Dict[str, Optional[bool]] = {}
+    place_flag = False
     for tool, flags in REQUIRED_FLAGS.items():
         spec = tools.get(tool)
         if spec is None:
@@ -250,6 +258,8 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
                 missing.append("|".join(alternatives))
         if "overwrite" in OPTIONAL_FLAGS.get(tool, ()):
             overwrite[tool] = "overwrite" in props
+        if "place" in OPTIONAL_FLAGS.get(tool, ()):
+            place_flag = "place" in props
         if "platform" in OPTIONAL_FLAGS.get(tool, ()):
             platform_flag[tool] = "platform" in props
             choices = (props.get("platform") or {}).get("enum")
@@ -273,7 +283,7 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
         generator_support[tool] = bool(props) and all(f in props for f in flags)
         generator_flags[tool] = {"encoder_quality": next(("--" + f for f in ("quality", "crf") if f in props), None),
                                  "overwrite": "overwrite" in props, "preset": "preset" in props}
-    return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite, "platform_flag": platform_flag, "platforms": platforms,
+    return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite, "platform_flag": platform_flag, "platforms": platforms, "place_flag": place_flag,
                       "template_support": template_support, "generator_support": generator_support, "generator_flags": generator_flags}
 
 

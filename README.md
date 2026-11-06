@@ -217,6 +217,17 @@ container can legitimately be almost anything `ffmpeg-skill/overlay --video` its
 own audio track, if any, is dropped; the base video's audio is unaffected. It never accepts a configurable
 `fade`: `ffmpeg-skill/overlay`'s `--video` branch never applies one at all (see `docs/decisions.md` ADR-15).
 
+## Rendered layers (pre-rendered animated graphics)
+
+`rendered_layer` places a clip that already carries its animation and an alpha channel (ProRes 4444, QuickTime
+Animation or PNG in MOV, made by another tool) at a position over the element's window. `in_duration` seconds from the
+clip's start play at the element's start, `out_duration` seconds from its end finish at its end, and the loop between
+them is repeated to fill the rest (`loop: true`, the default) or played once and cut (`loop: false`). Each piece is one
+`ffmpeg-skill/overlay --place`, computed in whole milliseconds; the run reports them (`operations[].parameters.segments`).
+A clip that does not decode with alpha is refused (`INVALID_INPUT`, `layer_without_alpha`), including a VP9 alpha WebM,
+whose alpha the overlay's decoder drops. A checkout without `--place` reports the type unsupported and refuses it before
+rendering. See ADR-25.
+
 ## Timeline validation
 
 - `start >= 0`, `end > start`, both **finite** (`NaN`/`Infinity` are rejected as `INVALID_TIME_RANGE`).

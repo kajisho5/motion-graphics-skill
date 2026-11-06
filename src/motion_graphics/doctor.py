@@ -54,6 +54,9 @@ def capability_status(skill_info: Optional[Any], ffdoc: Dict[str, Any]) -> Dict[
     for tool in GENERATOR_TOOLS:
         found = skill_info.tool_support(tool) if skill_info is not None and have_skill else False
         status[f"ffmpeg-skill-tool:{tool}"] = "unknown" if found is None else ("supported" if found else "unsupported")
+    # optional flags one element type needs (ADR-25: overlay --place, for rendered_layer)
+    takes_place = getattr(skill_info, "takes_place", None)
+    status["ffmpeg-skill-flag:overlay.place"] = "supported" if have_skill and callable(takes_place) and takes_place() else "unsupported"
     if have_skill and ffdoc.get("_unavailable"):
         # this ffmpeg-skill has no doctor to ask: nothing detected either way; output validation reports the truth per run
         for cap in ["ffmpeg", "ffprobe", *CORE_CAPABILITIES]:
