@@ -8,6 +8,7 @@ stderr: diagnostics only. Exit code: 0 on success, otherwise errors.EXIT_CODES[e
   motion-graphics validate - --json       validate a request document, run nothing, touch no files
   motion-graphics plan - --json           dry run: resolves and probes inputs, writes no media
   motion-graphics run - --json [--dry-run]
+  motion-graphics theme-check theme.json --json      validate a theme file and report its contrast (renders nothing)
   motion-graphics lower-thirds names.csv --video in.mp4 --output out.mp4 --fit-width 600   one lower third per CSV row (a request)"""
 from __future__ import annotations
 
@@ -73,6 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
     lt.add_argument("--style", help="a style preset for every row (contract style_presets)")
     lt.add_argument("--overwrite", action="store_true")
     _add_common(lt)
+    tc = sub.add_parser("theme-check", help="validate a theme file and report its contrast (reads only that file)")
+    tc.add_argument("theme")
+    _add_common(tc)
     return ap
 
 
@@ -138,6 +142,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         doc = doctor_report(args.ffmpeg_skill, args.workspace, args.allowed_input)
         _emit(doc, as_json)
         return 0 if doc["status"] != "fail" else 1
+    if args.cmd == "theme-check":
+        from .themes import parse_theme
+        try:
+            with open(args.theme, "r", encoding="utf-8") as fh:
+                theme = parse_theme(json.loads(fh.read(256 * 1024 + 1)), args.theme)
+            low = [c for c in theme["contrast"] if not c["ok"]]
+            doc = {"schema": RESPONSE_SCHEMA_ID, "skill": {"id": SKILL_ID, "version": VERSION}, "ok": True, "status": "ok", "dry_run": True,
+                   "theme": theme, "warnings": [f"low contrast {c['ratio']:g}:1 (minimum {c['minimum']:g}:1) for {c['drawn_as']}" for c in low]}
+        except (OSError, ValueError) as e:
+            doc = _error_document(MotionGraphicsError("INVALID_INPUT", f"cannot read the theme: {e}"), True)
+        except MotionGraphicsError as e:
+            doc = _error_document(e, True)
+        sys.stdout.write(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+        return 0 if doc.get("ok") else EXIT_CODES.get(doc["error"]["code"], EXIT_CODES["INTERNAL_ERROR"])
     if args.cmd == "lower-thirds":
         from .csvrows import lower_thirds_document
         try:
