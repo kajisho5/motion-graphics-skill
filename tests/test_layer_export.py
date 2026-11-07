@@ -172,9 +172,9 @@ def test_a_codec_the_checkout_does_not_offer_is_refused():
     assert e.value.details["reason"] == "ffmpeg_skill_lacks_alpha_codec" and e.value.details["alpha_codec"] == "vp9"
     ex._check_checkout(parse_request(request_doc([title_element()], options=_options(alpha_codec="qtrle"))))
     # the canvas is always drawn in CANVAS_ALPHA_CODEC, so a checkout without it is refused whatever the layers' codec
-    ex = Executor(PathPolicy("."), skill=SimpleNamespace(info=lambda: _info(codecs=("prores4444",))))
+    ex = Executor(PathPolicy("."), skill=SimpleNamespace(info=lambda: _info(codecs=("qtrle",))))
     with pytest.raises(MotionGraphicsError) as e:
-        ex._check_checkout(parse_request(request_doc([title_element()], options=_options())))
+        ex._check_checkout(parse_request(request_doc([title_element()], options=_options(alpha_codec="qtrle"))))
     assert e.value.details["alpha_codec"] == CANVAS_ALPHA_CODEC
 
 
@@ -270,6 +270,13 @@ def _psnr(a, b):
     return float(m.group(4))
 
 
+def _stream(path):
+    """pix_fmt, range, matrix, primaries and transfer of a file's video stream (reported with a failing PSNR)."""
+    return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                           "stream=pix_fmt,color_range,color_space,color_primaries,color_transfer", "-of", "csv=p=0", str(path)],
+                          capture_output=True, text=True).stdout.strip()
+
+
 def _rgba(path, t, crop):
     """Mean R, G, B, A of a cropped region of the frame at time t."""
     out = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1",
@@ -343,7 +350,9 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
     work = workspace / ".motion-graphics" / res["provenance"]["document_id"]
     stages = [work / f"{op['operation_id'][:16]}.mp4" for op in res["operations"][:-1]] + [burned]
     per_layer = {lay["id"]: _psnr(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)}
-    assert with_layers >= MIN_PSNR_DB and with_layers > without + 5, (with_layers, without, per_layer)
+    assert with_layers >= MIN_PSNR_DB and with_layers > without + 5, (with_layers, without, per_layer,
+                                                                       {lay["id"]: _stream(workspace / "layers" / lay["file"]) for lay in manifest["layers"]},
+                                                                       _stream(workspace / "video.mp4"), _stream(burned))
 
     # again with overwrite: the canvas is reused, the layers are written again
     res2 = _executor(skill_dir, workspace).response(request_doc(elements, overwrite=True, options=_options()))

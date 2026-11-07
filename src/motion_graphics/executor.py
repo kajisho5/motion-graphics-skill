@@ -36,9 +36,9 @@ MANIFEST_SCHEMA = f"{SKILL_ID}/manifest@1"
 WORK_DIR_NAME = ".motion-graphics"
 DURATION_TOLERANCE = 0.25  # seconds; each stage re-encodes with a forced constant frame rate (ffmpeg-skill cfr_args)
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
-# ADR-30: the transparent canvas every layer is drawn on is QuickTime Animation (run-length coded: an empty picture costs almost nothing,
-# so a canvas the programme's length stays small); the layers themselves are in the requested alpha codec
-CANVAS_ALPHA_CODEC = "qtrle"
+# ADR-30: the transparent canvas every layer is drawn on is ProRes 4444 (ffmpeg-skill's default alpha line): a YUV picture with alpha, so
+# each element is drawn on a picture of the same kind as the video it is burned into; the layers themselves are in the requested codec
+CANVAS_ALPHA_CODEC = "prores4444"
 
 
 @dataclass
