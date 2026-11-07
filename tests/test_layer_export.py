@@ -151,6 +151,7 @@ def _info(supported=True, codecs=("png", "prores4444", "qtrle", "vp9")):
     feature = {"supported": supported, "missing": [] if supported else ["background.transparent", "graphics.keep_alpha"],
                "alpha_codecs": list(codecs) if supported else None}
     return SimpleNamespace(directory="/x", version="3.2.2", template_support=lambda t: True, tool_support=lambda t: True, takes_place=lambda: True,
+                           takes_overwrite=lambda tool: True, takes_platform=lambda tool: True, takes_flag=lambda tool, flag: True,
                            layer_export=lambda: dict(feature), supported=True)
 
 
@@ -208,6 +209,26 @@ def test_a_layer_file_may_not_be_the_programme_or_leave_the_workspace(tmp_path):
     assert e.value.code == "PATH_NOT_ALLOWED"
 
 
+def test_a_failed_layer_leaves_no_earlier_manifest_behind(tmp_path):
+    """With overwrite, the manifest of an earlier run goes before the first layer is drawn: a failure part-way leaves no manifest that
+    describes layer files which were removed or rewritten since."""
+    (tmp_path / "layers").mkdir()
+    (tmp_path / "layers" / "manifest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "layers" / "t1.mov").write_bytes(b"old")
+
+    def fail(*a, **k):
+        raise MotionGraphicsError("TOOL_ERROR", "drawing failed", {"reason": "tool_failed"})
+    skill = SimpleNamespace(info=lambda: _info(), run_tool=fail)
+    ex = Executor(PathPolicy(str(tmp_path)), skill=skill)
+    ex._canvas = lambda work_dir, params: {"path": str(tmp_path / "canvas.mov"), "record": {"parameters": params}}
+    doc = parse_request(request_doc([title_element()], overwrite=True, options=_options()))
+    paths = ex._layer_paths(doc, tmp_path / "video.mp4", tmp_path / "out.mp4")
+    with pytest.raises(MotionGraphicsError):
+        ex._export_layers(doc, doc.ordered_elements(), paths, {}, {}, {}, 320, 180, 6.0, 25.0, tmp_path, ".mp4", 18, "medium", None,
+                          tmp_path / "out.mp4", {"sha256": "x", "duration": 6.0})
+    assert not (tmp_path / "layers" / "manifest.json").exists() and not (tmp_path / "layers" / "t1.mov").exists()
+
+
 # ---- the manifest and the contract
 def test_manifest_document_shape():
     layer = {"id": "t1", "type": "title", "start": 0.0, "end": 2.0, "box": {"x": 1, "y": 2, "width": 3, "height": 4}, "box_precision": "estimated",
@@ -259,17 +280,17 @@ def _rgba(path, t, crop):
 
 
 def _composite(skill_dir, workspace, manifest):
-    """The layers over the clean video, in the manifest's order, each with ffmpeg-skill/overlay at 0,0 (how an NLE stacks them)."""
+    """The layers over the clean video, in the manifest's order, each with ffmpeg-skill/overlay at 0,0 (how an NLE stacks them).
+    Returns every step's file: step i is the clean video with layers 0..i on it."""
     skill = FfmpegSkill(skill_dir)
-    base = workspace / "video.mp4"
+    base, steps = workspace / "video.mp4", []
     for i, layer in enumerate(manifest["layers"]):
         out = workspace / f"comp{i}.mp4"
         skill.run_tool("overlay", [str(base), "--video", str(workspace / "layers" / layer["file"]), "--position", "top-left", "--margin", "0",
                                    "-o", str(out), "--overwrite"])
-        if base.name.startswith("comp"):
-            base.unlink()
+        steps.append(out)
         base = out
-    return base
+    return steps
 
 
 def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_dir, workspace):
@@ -315,10 +336,14 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
     assert a >= 250 and b > r + 60, (r, g, b, a)                       # navy, opaque, inside it
     assert _rgba(box_layer, 4.0, "40:20:20:120")[3] == 0               # away from the shape
 
-    composite = _composite(skill_dir, workspace, manifest)
+    steps = _composite(skill_dir, workspace, manifest)
     burned = workspace / "out" / "out.mp4"
-    with_layers, without = _psnr(composite, burned), _psnr(workspace / "video.mp4", burned)
-    assert with_layers >= MIN_PSNR_DB and with_layers > without + 5, (with_layers, without)
+    with_layers, without = _psnr(steps[-1], burned), _psnr(workspace / "video.mp4", burned)
+    # each composite step against the programme stage that burned the same elements, so a failure names the layer that differs
+    work = workspace / ".motion-graphics" / res["provenance"]["document_id"]
+    stages = [work / f"{op['operation_id'][:16]}.mp4" for op in res["operations"][:-1]] + [burned]
+    per_layer = {lay["id"]: _psnr(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)}
+    assert with_layers >= MIN_PSNR_DB and with_layers > without + 5, (with_layers, without, per_layer)
 
     # again with overwrite: the canvas is reused, the layers are written again
     res2 = _executor(skill_dir, workspace).response(request_doc(elements, overwrite=True, options=_options()))

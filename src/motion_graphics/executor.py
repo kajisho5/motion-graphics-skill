@@ -723,6 +723,9 @@ class Executor:
         """Every element drawn alone on the transparent canvas, with the call that burned it into the programme (ADR-30), then the manifest."""
         settings = paths["settings"]
         alpha = (settings["alpha_codec"], settings["alpha_mode"])
+        # a manifest from an earlier run (replacing it was consented to) goes first: if a layer fails below, no manifest is left describing
+        # files that have since been removed or rewritten
+        self._remove_partial(paths["manifest"])
         canvas = self._canvas(work_dir, self._canvas_parameters(width, height, duration, fps))
         paths["directory"].mkdir(parents=True, exist_ok=True)
         layers: List[Dict[str, Any]] = []
