@@ -270,10 +270,18 @@ def _psnr(a, b):
     return float(m.group(4))
 
 
+def _psnr_by_half_second(a, b):
+    """The mean per-frame PSNR of each half second (25 fps: 12-13 frames), reported with a failing PSNR."""
+    out = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(a), "-i", str(b), "-lavfi", "psnr=stats_file=-",
+                          "-f", "null", "-"], capture_output=True, text=True).stdout
+    frames = [float(m.group(1)) if m.group(1) != "inf" else 99.0 for m in re.finditer(r"psnr_avg:([\d.]+|inf)", out)]
+    return [round(sum(frames[i:i + 12]) / len(frames[i:i + 12]), 1) for i in range(0, len(frames), 12)]
+
+
 def _stream(path):
     """pix_fmt, range, matrix, primaries and transfer of a file's video stream (reported with a failing PSNR)."""
     return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                           "stream=pix_fmt,color_range,color_space,color_primaries,color_transfer", "-of", "csv=p=0", str(path)],
+                           "stream=pix_fmt,color_range,color_space,color_primaries,color_transfer,start_pts,start_time,r_frame_rate,nb_frames", "-of", "csv=p=0", str(path)],
                           capture_output=True, text=True).stdout.strip()
 
 
@@ -350,9 +358,11 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
     work = workspace / ".motion-graphics" / res["provenance"]["document_id"]
     stages = [work / f"{op['operation_id'][:16]}.mp4" for op in res["operations"][:-1]] + [burned]
     per_layer = {lay["id"]: _psnr(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)}
-    assert with_layers >= MIN_PSNR_DB and with_layers > without + 5, (with_layers, without, per_layer,
-                                                                       {lay["id"]: _stream(workspace / "layers" / lay["file"]) for lay in manifest["layers"]},
-                                                                       _stream(workspace / "video.mp4"), _stream(burned))
+    if not (with_layers >= MIN_PSNR_DB and with_layers > without + 5):
+        pytest.fail(json.dumps({"with_layers": with_layers, "without": without, "per_layer": per_layer,
+                                "streams": {lay["id"]: _stream(workspace / "layers" / lay["file"]) for lay in manifest["layers"]},
+                                "clean": _stream(workspace / "video.mp4"), "burned": _stream(burned),
+                                "by_half_second": {lay["id"]: _psnr_by_half_second(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)}}))
 
     # again with overwrite: the canvas is reused, the layers are written again
     res2 = _executor(skill_dir, workspace).response(request_doc(elements, overwrite=True, options=_options()))
