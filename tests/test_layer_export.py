@@ -362,7 +362,11 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
         pytest.fail(json.dumps({"with_layers": with_layers, "without": without, "per_layer": per_layer,
                                 "streams": {lay["id"]: _stream(workspace / "layers" / lay["file"]) for lay in manifest["layers"]},
                                 "clean": _stream(workspace / "video.mp4"), "burned": _stream(burned),
-                                "by_half_second": {lay["id"]: _psnr_by_half_second(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)}}))
+                                "by_half_second": {lay["id"]: _psnr_by_half_second(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)},
+                                # what each pass changed where its own layer is transparent: composite step i-1 -> i, programme stage i-1 -> i
+                                "composite_pass": [_psnr_by_half_second(a, b)[:1] for a, b in zip(steps, steps[1:])],
+                                "programme_pass": [_psnr_by_half_second(a, b)[:1] for a, b in zip(stages, stages[1:])],
+                                "step_streams": [_stream(x) for x in steps], "stage_streams": [_stream(x) for x in stages]}))
 
     # again with overwrite: the canvas is reused, the layers are written again
     res2 = _executor(skill_dir, workspace).response(request_doc(elements, overwrite=True, options=_options()))
