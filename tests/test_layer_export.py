@@ -16,7 +16,7 @@ from motion_graphics.doctor import capability_status
 from motion_graphics.errors import MotionGraphicsError
 from motion_graphics.executor import CANVAS_ALPHA_CODEC, Executor
 from motion_graphics.layerexport import (LAYER_EXPORT_FLAGS, LAYERS_MANIFEST_SCHEMA, alpha_step, layer_file_name, manifest_document,
-                                         parse_layer_export)
+                                         parse_layer_export, retag_for)
 from motion_graphics.model import parse_request
 from motion_graphics.security import PathPolicy
 
@@ -124,13 +124,14 @@ def _tools(**extra):
     tools = {t: {"input_schema": {"properties": {f: {} for f in fl + ("quality",)}}} for t, fl in adapter.REQUIRED_FLAGS.items()}
     tools["background"] = {"input_schema": {"properties": {f: {} for f in adapter.GENERATOR_TOOLS["background"]}}}
     for tool, props in extra.items():
-        tools[tool]["input_schema"]["properties"].update(props)
+        tools.setdefault(tool, {"input_schema": {"properties": {}}})["input_schema"]["properties"].update(props)
     return tools
 
 
 def test_check_tools_detects_the_alpha_flags():
     feature = adapter.check_tools(_tools())[1]["layer_export"]
     assert feature["supported"] is False and "background.transparent" in feature["missing"] and "graphics.keep_alpha" in feature["missing"]
+    assert "color.retag" in feature["missing"]
     codecs = {"enum": ["png", "prores4444", "qtrle", "vp9"]}
     full = {tool: {f: (codecs if f == "alpha_codec" else {}) for f in flags} for tool, flags in LAYER_EXPORT_FLAGS.items()}
     feature = adapter.check_tools(_tools(**full))[1]["layer_export"]
@@ -240,6 +241,17 @@ def test_manifest_document_shape():
     assert manifest_document({}, {"alpha_codec": "qtrle", "alpha_mode": "straight"}, {}, [dict(layer, verified=None)])["verified"] is False
 
 
+@pytest.mark.parametrize("video, tags", [
+    ({"color_space": "bt709", "color_transfer": "bt709"}, "bt709"),
+    ({"color_space": "bt2020nc", "color_transfer": "smpte2084"}, "bt2020-pq"),
+    ({"color_space": "bt2020nc", "color_transfer": "arib-std-b67"}, "bt2020-hlg"),
+    ({"color_space": "smpte170m"}, "bt601"), ({"color_space": "bt470bg"}, "bt601"),
+    ({"color_space": "bt2020nc", "color_transfer": "bt2020-10"}, None), ({}, None),
+])
+def test_the_canvas_takes_the_programmes_colour_tags(video, tags):
+    assert retag_for(video) == tags
+
+
 def test_alpha_step_is_read_from_the_tool_result():
     assert alpha_step({"verification": [{"step": "probe", "ok": True}, {"step": "alpha", "ok": False, "reason": "no_alpha_plane"}]})["reason"] == "no_alpha_plane"
     assert alpha_step({"verification": [{"step": "probe", "ok": True}]}) is None and alpha_step(None) is None
@@ -336,6 +348,11 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
     assert manifest["programme"]["sha256"] == res["output"]["sha256"]
     assert [(lay["id"], lay["type"], lay["start"], lay["end"]) for lay in manifest["layers"]] == [(e["id"], e["type"], e["start"], e["end"]) for e in
                                                                                                  sorted(elements, key=lambda e: (e["start"], e["id"]))]
+    # the canvas got the programme's colour tags, and every layer drawn on it carries them (an untagged layer is read as BT.601 by a
+    # compositor that negotiates colour, and the picture under it is converted)
+    assert le["canvas"]["parameters"]["color_tags"] == "bt709" and le["canvas"]["retag"]["verified"] is True
+    for lay in le["layers"]:
+        assert _stream(workspace / "layers" / lay["file"]).split(",")[2:5] == ["bt709", "bt709", "bt709"], lay["file"]
     for lay in le["layers"]:
         assert lay["verified"] is True and lay["alpha"]["ok"] is True and lay["alpha"]["written"]["alpha_plane"] is True, lay
         assert lay["alpha_codec"] == "prores4444" and abs(lay["duration"] - 6.0) <= 0.25

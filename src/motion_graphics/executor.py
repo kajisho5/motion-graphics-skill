@@ -23,7 +23,7 @@ from .canonical import sha256_file, stable_hash
 from .colors import template_color
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
-from .layerexport import ALPHA_CODECS, MANIFEST_NAME, alpha_step, layer_file_name, manifest_document
+from .layerexport import ALPHA_CODECS, MANIFEST_NAME, alpha_step, layer_file_name, manifest_document, retag_for
 from .layers import has_alpha, layer_placements, place_args
 from .regions import element_boxes, overlaps, resolve_regions
 from .textfit import fit as fit_text
@@ -230,7 +230,7 @@ class Executor:
                              "output": {"path": str(output_path)}, "timeline": timeline},
                     **({"reserved_regions": reserved} if reserved else {}),
                     **({"theme": self._theme_record(theme)} if theme else {}),
-                    **({"layer_export": self._layer_plan(doc, ordered, layer_paths, resolved_assets, fits, width, height, duration, fps)}
+                    **({"layer_export": self._layer_plan(doc, ordered, layer_paths, resolved_assets, fits, width, height, duration, fps, video)}
                        if layer_paths is not None else {}),
                     "warnings": (warnings_for(theme) if theme else []) + self._region_warnings(reserved)}
 
@@ -650,9 +650,11 @@ class Executor:
         return {"directory": directory, "files": files, "manifest": manifest, "settings": dict(opts)}
 
     @staticmethod
-    def _canvas_parameters(width: int, height: int, duration: float, fps: float) -> Dict[str, Any]:
-        """What ffmpeg-skill/background --transparent is asked for: the source's size, rate and length, in the canvas's alpha line."""
-        return {"width": width, "height": height, "duration": fmt_seconds(duration), "fps": fmt_number(fps), "alpha_codec": CANVAS_ALPHA_CODEC}
+    def _canvas_parameters(width: int, height: int, duration: float, fps: float, color_tags: Optional[str]) -> Dict[str, Any]:
+        """What ffmpeg-skill/background --transparent is asked for: the source's size, rate and length, in the canvas's alpha line; and the
+        colour tags ffmpeg-skill/color --retag then gives it (the programme's), which every layer drawn on it keeps."""
+        return {"width": width, "height": height, "duration": fmt_seconds(duration), "fps": fmt_number(fps), "alpha_codec": CANVAS_ALPHA_CODEC,
+                "color_tags": color_tags}
 
     def _layer_box(self, el: GraphicsElement, assets: Dict[str, Dict[str, Any]], fits: Dict[str, Dict[str, Any]], width: int, height: int) -> Dict[str, Any]:
         boxes, precision = self._element_boxes(el, assets, fits, width, height)
@@ -663,11 +665,14 @@ class Executor:
         return {"box": {"x": int(x0), "y": int(y0), "width": int(x1 - x0), "height": int(y1 - y0)}, "box_precision": precision}
 
     def _layer_plan(self, doc: Any, ordered: Tuple[GraphicsElement, ...], paths: Dict[str, Any], assets: Dict[str, Dict[str, Any]],
-                    fits: Dict[str, Dict[str, Any]], width: int, height: int, duration: float, fps: float) -> Dict[str, Any]:
+                    fits: Dict[str, Dict[str, Any]], width: int, height: int, duration: float, fps: float, source_video: Dict[str, Any]) -> Dict[str, Any]:
+        # the programme's tags are known only once it is written; ffmpeg-skill tags an SDR programme BT.709 and keeps an HDR source's
+        source_video = source_video if source_video.get("bt2020_or_hdr") else {"color_space": "bt709"}
         settings = paths["settings"]
         return {"directory": str(paths["directory"]), "alpha_codec": settings["alpha_codec"], "alpha_mode": settings["alpha_mode"],
                 "manifest": {"path": str(paths["manifest"])},
-                "canvas": {"tool": "ffmpeg-skill/background", "parameters": self._canvas_parameters(width, height, duration, fps)},
+                "canvas": {"tool": "ffmpeg-skill/background", "retag": "ffmpeg-skill/color",
+                           "parameters": self._canvas_parameters(width, height, duration, fps, retag_for(source_video))},
                 "layers": [dict({"id": el.element_id, "type": el.type, "start": el.start, "end": el.end, "file": paths["files"][el.element_id].name,
                                  "tool": f"ffmpeg-skill/{ELEMENT_TYPES[el.type]['tool']}"}, **self._layer_box(el, assets, fits, width, height))
                            for el in ordered]}
@@ -689,17 +694,29 @@ class Executor:
                 "--fps", params["fps"], "--alpha-codec", params["alpha_codec"]]
         if flags.get("overwrite"):
             argv.append("--overwrite")
+        raw = path.with_name(path.stem + "-untagged" + path.suffix) if params.get("color_tags") else path
+        retag_run = None
         try:
-            run = self.skill.run_tool("background", argv, self.timeout)
+            run = self.skill.run_tool("background", argv[:1] + [str(raw)] + argv[2:], self.timeout)
+            if raw != path:
+                # the canvas gets the programme's colour tags (metadata only, a stream copy): graphics / overlay --keep-alpha keep the
+                # tags of the picture they draw on, so every layer says the matrix it was drawn in, as the programme does
+                retag_run = self.skill.run_tool("color", [str(raw), "--retag", params["color_tags"], "-o", str(path)], self.timeout)
+                self._remove_partial(raw)
             meta = self._validate_layer_file(path, "the transparent canvas", params["width"], params["height"], float(params["duration"]))
         except MotionGraphicsError:
+            self._remove_partial(raw)
             self._remove_partial(path)
             raise
         manifest.write_text(json.dumps({"schema": MANIFEST_SCHEMA, "operation_id": identity, "type": "transparent-canvas", "parameters": params, "input_hashes": [],
                                         "output_hash": meta["sha256"], "output_size": meta["size"], "duration": meta["duration"], "tool": "ffmpeg-skill/background",
                                         "tool_versions": self.tool_versions, "skill": SKILL_ID, "skill_version": VERSION}, indent=2, sort_keys=True), encoding="utf-8")
-        record.update(status="rendered", output_hash=meta["sha256"], seconds=run.seconds, tool_commands_observed=run.commands,
+        record.update(status="rendered", output_hash=meta["sha256"], seconds=round(run.seconds + (retag_run.seconds if retag_run else 0.0), 3),
+                      tool_commands_observed=run.commands + (retag_run.commands if retag_run else []),
                       verified=run.data.get("verified") if isinstance(run.data, dict) else None)
+        if retag_run is not None:
+            record["retag"] = {"tool": "ffmpeg-skill/color", "color_tags": params["color_tags"],
+                               "verified": retag_run.data.get("verified") if isinstance(retag_run.data, dict) else None}
         return {"path": str(path), "record": record}
 
     def _validate_layer_file(self, path: Path, what: str, width: int, height: int, duration: float) -> Dict[str, Any]:
@@ -726,7 +743,7 @@ class Executor:
         # a manifest from an earlier run (replacing it was consented to) goes first: if a layer fails below, no manifest is left describing
         # files that have since been removed or rewritten
         self._remove_partial(paths["manifest"])
-        canvas = self._canvas(work_dir, self._canvas_parameters(width, height, duration, fps))
+        canvas = self._canvas(work_dir, self._canvas_parameters(width, height, duration, fps, retag_for(programme.get("video") or {})))
         paths["directory"].mkdir(parents=True, exist_ok=True)
         layers: List[Dict[str, Any]] = []
         for el in ordered:
@@ -922,4 +939,4 @@ class Executor:
         if abs(duration - expected_duration) > DURATION_TOLERANCE:
             raise MotionGraphicsError("VALIDATION_ERROR", f"final output duration {duration:.3f}s differs from expected {expected_duration:.3f}s",
                                        {"reason": "duration_mismatch", "duration": duration, "expected": expected_duration, "path": str(path)})
-        return {"sha256": sha256_file(str(path)), "size": size, "duration": duration}
+        return {"sha256": sha256_file(str(path)), "size": size, "duration": duration, "video": video}

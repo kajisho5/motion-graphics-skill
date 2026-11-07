@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from . import CONTRACT_SCHEMA_VERSION, DOCTOR_SCHEMA_VERSION, PACKAGE_NAME, REQUEST_SCHEMA_VERSION, RESPONSE_SCHEMA_VERSION, SKILL_ID, VERSION
 from .colors import NAMED_COLORS
 from .adapter import (FLAG_ALTERNATIVES, FLAGS_USED, GENERATOR_OPTIONAL_FLAGS, GENERATOR_TOOLS, KNOWN_CONTRACT_VERSION, KNOWN_CONTRACT_VERSIONS, OPTIONAL_FLAGS, REQUIRED_FLAGS,
-                      TEMPLATE_FLAGS, TOOLS_USED)
+                      LAYER_TOOLS, TEMPLATE_FLAGS, TOOLS_USED)
 from .errors import ERROR_CODES, ERROR_TABLE, EXIT_CODES
 from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
@@ -63,7 +63,7 @@ FFMPEG_SKILL_CONTRACT_RANGE = f">={KNOWN_CONTRACT_VERSION} <{int(KNOWN_CONTRACT_
 
 def dependencies() -> List[Dict[str, Any]]:
     return [{"skill_id": "ffmpeg-skill", "version_range": FFMPEG_SKILL_CONTRACT_RANGE, "range_of": "contract_version", "required": True,
-             "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED + tuple(GENERATOR_TOOLS)]}]
+             "tools": [f"ffmpeg-skill/{t}" for t in TOOLS_USED + tuple(GENERATOR_TOOLS) + LAYER_TOOLS]}]
 
 
 def _param_schema(ps: Dict[str, Any]) -> Dict[str, Any]:
@@ -102,7 +102,7 @@ def skill_contract() -> Dict[str, Any]:
               "element_types": sorted(ELEMENT_TYPES), "supports": {"dry_run": True, "timeout": True, "cancel": True, "validate": True},
               "verification": "every artifact is probed (video stream, resolution, duration, sha256); the final output is always re-validated even when intermediates were reused",
               "provenance": "OBSERVED", "mutates_input": False,
-              "delegates_to": [f"ffmpeg-skill/{t}" for t in TOOLS_USED + tuple(GENERATOR_TOOLS)]}]
+              "delegates_to": [f"ffmpeg-skill/{t}" for t in TOOLS_USED + tuple(GENERATOR_TOOLS) + LAYER_TOOLS]}]
     return {
         "schema": CONTRACT_SCHEMA_ID, "skill_id": SKILL_ID, "id": SKILL_ID, "name": PACKAGE_NAME, "package": PACKAGE_NAME, "version": VERSION,
         "contract_version": CONTRACT_SCHEMA_VERSION, "kind": "execution", "role": "motion graphics rendering (execution); not design, not decision",
@@ -165,7 +165,8 @@ def skill_contract() -> Dict[str, Any]:
         "execution": {"mode": "local", "canonical_invocation": ["motion-graphics", "run", "-", "--json"], "stdin": REQUEST_SCHEMA_ID,
                       "stdout": f"exactly one {SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION} document", "stderr": "diagnostics only",
                       "executables": ["python3 <ffmpeg-skill>/scripts/{probe,graphics,overlay}.py (argv lists)",
-                                      "python3 <ffmpeg-skill>/scripts/background.py (argv list; shape elements, ADR-22, and the transparent canvas of a layer export, ADR-30)"],
+                                      "python3 <ffmpeg-skill>/scripts/background.py (argv list; shape elements, ADR-22, and the transparent canvas of a layer export, ADR-30)",
+                                      "python3 <ffmpeg-skill>/scripts/color.py --retag (argv list; the layer export canvas's colour tags, ADR-30)"],
                       "executable_resolution": "ffmpeg-skill directory: --ffmpeg-skill, MOTION_GRAPHICS_FFMPEG_SKILL_DIR, VIDEO_AGENT_FFMPEG_SKILL_DIR, ~/.claude/skills/ffmpeg-skill, ./vendor/ffmpeg-skill, ../ffmpeg-skill; ffmpeg/ffprobe: PATH lookup by ffmpeg-skill",
                       "shell": False, "arbitrary_executables": False, "arbitrary_filters": False, "network": False, "input_mutation": False, "ai": False},
         "ffmpeg_skill": {"contract_version": KNOWN_CONTRACT_VERSION,

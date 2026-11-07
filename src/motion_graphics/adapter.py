@@ -91,6 +91,9 @@ TEMPLATE_FLAGS: Dict[str, Tuple[str, ...]] = {"sticker": ("text",), "hook": ("du
 # type; a checkout without it, or without these flags, reports `shape` unsupported and refuses it before rendering.
 # Its encoder flags (--quality/--crf, --overwrite, --preset) are passed when the checkout has them.
 GENERATOR_TOOLS: Dict[str, Tuple[str, ...]] = {"background": ("output", "duration", "width", "height", "color", "json")}
+# ffmpeg-skill tools called only for a layer export (ADR-30): `color --retag` gives the transparent canvas the programme's colour tags.
+# Detected with LAYER_EXPORT_FLAGS; never needed to locate a checkout.
+LAYER_TOOLS: Tuple[str, ...] = ("color",)
 GENERATOR_OPTIONAL_FLAGS: Dict[str, Tuple[str, ...]] = {"background": ("quality", "crf", "preset", "overwrite")}
 # every flag this adapter may emit, for the contract document (`ffmpeg_skill.flags_used`)
 FLAGS_USED: Dict[str, Tuple[str, ...]] = {
@@ -231,7 +234,7 @@ def flags_from_help(text: str) -> Dict[str, Any]:
     (dashes -> underscores) and every name listed under "positional arguments". The same keys a contract's
     input_schema.properties carries, so check_tools() works on either."""
     props: Dict[str, Any] = {m.group(1).replace("-", "_"): {} for m in _HELP_FLAG_RE.finditer(text)}
-    for flag in ("template", "platform", "alpha_codec"):  # argparse prints the choices as `--flag {a,b,c}`; a contract carries them as `enum`
+    for flag in ("template", "platform", "alpha_codec", "retag"):  # argparse prints the choices as `--flag {a,b,c}`; a contract carries them as `enum`
         m = re.search(rf"--{flag.replace('_', '-')}\s+\{{([^}}\s]+)\}}", text)
         if m and flag in props:
             props[flag] = {"enum": m.group(1).split(",")}
@@ -355,7 +358,7 @@ class FfmpegSkill:
                                    {"reason": "ffmpeg_skill_missing", "tried": tried}, retryable=False)
 
     def script(self, tool: str) -> str:
-        if tool not in TOOLS_USED and tool not in GENERATOR_TOOLS:
+        if tool not in TOOLS_USED and tool not in GENERATOR_TOOLS and tool not in LAYER_TOOLS:
             raise MotionGraphicsError("INTERNAL_ERROR", f"tool {tool!r} is not on the adapter allowlist")
         return str(self.directory / "scripts" / f"{tool}.py")
 
@@ -383,8 +386,8 @@ class FfmpegSkill:
 
     def _tools_from_help(self, timeout: float) -> Dict[str, Dict[str, Any]]:
         tools: Dict[str, Dict[str, Any]] = {}
-        for tool in TOOLS_USED + tuple(GENERATOR_TOOLS):
-            if tool in GENERATOR_TOOLS and not Path(self.script(tool)).is_file():
+        for tool in TOOLS_USED + tuple(GENERATOR_TOOLS) + LAYER_TOOLS:
+            if tool not in TOOLS_USED and not Path(self.script(tool)).is_file():
                 continue
             try:
                 code, out, _, _ = self._popen([sys.executable, self.script(tool), "--help"], timeout)

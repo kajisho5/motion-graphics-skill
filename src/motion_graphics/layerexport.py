@@ -29,8 +29,24 @@ DEFAULT_ALPHA_MODE = "straight"
 # keeping its alpha. Detected from the checkout (adapter.check_tools), never inferred from a version number (ADR-18).
 LAYER_EXPORT_FLAGS: Dict[str, tuple] = {"background": ("transparent", "fps", "alpha_codec", "alpha_mode"),
                                         "graphics": ("keep_alpha", "alpha_codec", "alpha_mode"),
-                                        "overlay": ("keep_alpha", "alpha_codec", "alpha_mode")}
+                                        "overlay": ("keep_alpha", "alpha_codec", "alpha_mode"),
+                                        "color": ("retag",)}
+# ffmpeg-skill/color --retag gives the transparent canvas the programme's colour tags (a stream copy): graphics / overlay --keep-alpha
+# keep the tags of what they draw on, so every layer says the matrix it was drawn in. Without them a layer reads as "unknown", and a
+# compositor that negotiates colour (FFmpeg 7.1 and later) converts the picture under it from BT.709 to its guess.
 FIELDS = ("directory", "alpha_codec", "alpha_mode")
+
+
+def retag_for(video: Dict[str, Any]) -> Optional[str]:
+    """ffmpeg-skill/color --retag's name for the colour tags a probed video stream carries, or None when they are none it names."""
+    space, transfer = video.get("color_space"), video.get("color_transfer")
+    if space == "bt709":
+        return "bt709"
+    if space in ("bt2020nc", "bt2020c"):
+        return {"smpte2084": "bt2020-pq", "arib-std-b67": "bt2020-hlg"}.get(transfer or "")
+    if space in ("smpte170m", "bt470bg"):
+        return "bt601"
+    return None
 
 
 def parse_layer_export(value: Any, element_ids: Sequence[str]) -> Dict[str, Any]:
@@ -99,8 +115,9 @@ def contract_section() -> Dict[str, Any]:
         "files": "one per element, <element id><container>, plus manifest.json; an existing one is replaced only with document.output.overwrite "
                  "(OUTPUT_ERROR, details.reason exists, before anything renders)",
         "timing": "every layer has the programme's size, frame rate and length and starts at 0 s; the element shows at its own start..end, as in the programme",
-        "how": "ffmpeg-skill/background --transparent makes one canvas (the source's size, rate and length); each element is the same graphics / overlay "
-               "call that burns it into the programme, on that canvas, with --keep-alpha --alpha-codec --alpha-mode (no audio)",
+        "how": "ffmpeg-skill/background --transparent makes one canvas (the source's size, rate and length) and ffmpeg-skill/color --retag gives it the "
+               "programme's colour tags; each element is the same graphics / overlay call that burns it into the programme, on that canvas, with "
+               "--keep-alpha --alpha-codec --alpha-mode (no audio), so every layer carries the programme's matrix, primaries and transfer tags",
         "requires": {"ffmpeg_skill_flags": {t: list(f) for t, f in LAYER_EXPORT_FLAGS.items()},
                      "otherwise": "TOOL_ERROR before anything renders (details.reason ffmpeg_skill_lacks_flag, details.flags; or ffmpeg_skill_lacks_alpha_codec "
                                   "when the checkout does not offer the codec); doctor reports capability ffmpeg-skill-feature:layer_export"},
