@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.17 — 2026-11-07
+
+- Export each element alone on a transparent layer, with a manifest (roadmap step 8) (#43) (a03a4dd)
+
 ## v0.2.16 — 2026-11-06
 
 - Add brand themes: colours, font, logo and spacing from one file, switchable, contrast checked (roadmap step 11) (#42) (78b49ff)
