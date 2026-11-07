@@ -310,7 +310,10 @@ def _composite(skill_dir, workspace, manifest):
     """The layers over the clean video, in the manifest's order, each with ffmpeg-skill/overlay at 0,0 (how an NLE stacks them).
     Returns every step's file: step i is the clean video with layers 0..i on it."""
     skill = FfmpegSkill(skill_dir)
-    base, steps = workspace / "video.mp4", []
+    # the clean video is the untagged fixture; the programme read it as BT.709 (ffmpeg-skill labels an untagged source so, tags only), and
+    # the layers say BT.709: the clean video is labelled the same way first (a stream copy), as a delivered clean programme would be
+    base, steps = workspace / "clean.mp4", []
+    skill.run_tool("color", [str(workspace / "video.mp4"), "--retag", "bt709", "-o", str(base), "--overwrite"])
     for i, layer in enumerate(manifest["layers"]):
         out = workspace / f"comp{i}.mp4"
         skill.run_tool("overlay", [str(base), "--video", str(workspace / "layers" / layer["file"]), "--position", "top-left", "--margin", "0",
@@ -370,7 +373,7 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
 
     steps = _composite(skill_dir, workspace, manifest)
     burned = workspace / "out" / "out.mp4"
-    with_layers, without = _psnr(steps[-1], burned), _psnr(workspace / "video.mp4", burned)
+    with_layers, without = _psnr(steps[-1], burned), _psnr(workspace / "clean.mp4", burned)
     # each composite step against the programme stage that burned the same elements, so a failure names the layer that differs
     work = workspace / ".motion-graphics" / res["provenance"]["document_id"]
     stages = [work / f"{op['operation_id'][:16]}.mp4" for op in res["operations"][:-1]] + [burned]
@@ -378,7 +381,7 @@ def test_layers_composited_over_the_clean_video_give_the_programme_back(skill_di
     if not (with_layers >= MIN_PSNR_DB and with_layers > without + 5):
         pytest.fail(json.dumps({"with_layers": with_layers, "without": without, "per_layer": per_layer,
                                 "streams": {lay["id"]: _stream(workspace / "layers" / lay["file"]) for lay in manifest["layers"]},
-                                "clean": _stream(workspace / "video.mp4"), "burned": _stream(burned),
+                                "clean": _stream(workspace / "clean.mp4"), "burned": _stream(burned),
                                 "by_half_second": {lay["id"]: _psnr_by_half_second(step, stage) for lay, step, stage in zip(manifest["layers"], steps, stages)},
                                 # what each pass changed where its own layer is transparent: composite step i-1 -> i, programme stage i-1 -> i
                                 "composite_pass": [_psnr_by_half_second(a, b)[:1] for a, b in zip(steps, steps[1:])],
