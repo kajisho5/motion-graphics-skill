@@ -21,7 +21,9 @@ Which ffmpeg-skill tools are used, and for what (docs/ffmpeg-skill.md):
             --chromakey/--chromakey-similarity/--chromakey-blend), with position, margin, static scale, opacity
             and (text/image only) a configurable linear --fade in/out
   background (optional) the solid-colour clip a SHAPE element composites with overlay --video (ADR-22); used only when the
-            checkout has it with GENERATOR_TOOLS' flags, otherwise `shape` is reported unsupported and refused up front
+            checkout has it with GENERATOR_TOOLS' flags, otherwise `shape` is reported unsupported and refused up front;
+            and (--transparent) the canvas every element is drawn on, with graphics / overlay --keep-alpha, for a layer
+            export (document.options.layer_export, ADR-30), only when the checkout has LAYER_EXPORT_FLAGS
 Every graphics/overlay invocation may also carry --audio-stream (document.options.audio_stream, ffmpeg-skill
 0.12.0) to select which audio track of the source survives, and --platform (document.options.platform) to put each element's
 margin in a destination's safe zone, when the checkout has that flag."""
@@ -39,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .errors import MotionGraphicsError
+from .layerexport import LAYER_EXPORT_FLAGS
 
 # contract_version values ffmpeg-skill releases declare: 1.0 (0.x, 1.x and 2.x), 2.0 (3.x, whose bump changed only
 # cut.py's `precision` / `keyframe_snapped` meaning -- a tool this adapter never calls; ADR-23). Reported, not gated on --
@@ -95,6 +98,9 @@ FLAGS_USED: Dict[str, Tuple[str, ...]] = {
     + (tuple(sorted({f for fl in TEMPLATE_FLAGS.values() for f in fl})) if tool == "graphics" else ())
     for tool, flags in REQUIRED_FLAGS.items()
 }
+# ADR-30: the alpha flags a layer export adds to the graphics / overlay calls (background's are in LAYER_EXPORT_FLAGS)
+for _tool in ("graphics", "overlay"):
+    FLAGS_USED[_tool] += tuple(f for f in LAYER_EXPORT_FLAGS[_tool] if f not in FLAGS_USED[_tool])
 _ENV_KEEP = ("PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "TERM",
              "SYSTEMROOT", "SYSTEMDRIVE", "PATHEXT", "COMSPEC", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA")
 _HELP_FLAG_RE = re.compile(r"(?<![\w-])--([a-z][a-z0-9-]*)")
@@ -195,6 +201,11 @@ class SkillInfo:
         names = (self.features.get("platforms") or {}).get(tool)
         return list(names) if isinstance(names, list) else None
 
+    def layer_export(self) -> Dict[str, Any]:
+        """Whether this checkout can draw an element alone on a transparent canvas (ADR-30): {supported, missing ["tool.flag"],
+        alpha_codecs (the --alpha-codec choices every tool offers, or None when they could not be read)}."""
+        return dict(self.features.get("layer_export") or {"supported": False, "missing": ["not detected"], "alpha_codecs": None})
+
     def tool_support(self, tool: str) -> Optional[bool]:
         """Whether this checkout has the optional generator `tool` (GENERATOR_TOOLS) with every flag this skill sends it."""
         return (self.features.get("generator_support") or {}).get(tool)
@@ -220,8 +231,8 @@ def flags_from_help(text: str) -> Dict[str, Any]:
     (dashes -> underscores) and every name listed under "positional arguments". The same keys a contract's
     input_schema.properties carries, so check_tools() works on either."""
     props: Dict[str, Any] = {m.group(1).replace("-", "_"): {} for m in _HELP_FLAG_RE.finditer(text)}
-    for flag in ("template", "platform"):  # argparse prints the choices as `--flag {a,b,c}`; a contract carries them as `enum`
-        m = re.search(rf"--{flag}\s+\{{([^}}\s]+)\}}", text)
+    for flag in ("template", "platform", "alpha_codec"):  # argparse prints the choices as `--flag {a,b,c}`; a contract carries them as `enum`
+        m = re.search(rf"--{flag.replace('_', '-')}\s+\{{([^}}\s]+)\}}", text)
         if m and flag in props:
             props[flag] = {"enum": m.group(1).split(",")}
     in_positional = False
@@ -291,9 +302,21 @@ def check_tools(tools: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, 
         generator_support[tool] = bool(props) and all(f in props for f in flags)
         generator_flags[tool] = {"encoder_quality": next(("--" + f for f in ("quality", "crf") if f in props), None),
                                  "overwrite": "overwrite" in props, "preset": "preset" in props}
+    # ADR-30: a layer export needs a transparent canvas (background --transparent) and graphics / overlay keeping its alpha; never a
+    # problem (nothing else needs them), a feature the request option is refused without
+    layer_missing: List[str] = []
+    alpha_codecs: Optional[List[str]] = None
+    for tool, flags in LAYER_EXPORT_FLAGS.items():
+        props = ((tools.get(tool) or {}).get("input_schema") or {}).get("properties") or {}
+        layer_missing += [f"{tool}.{f}" for f in flags if f not in props]
+        choices = (props.get("alpha_codec") or {}).get("enum")
+        if isinstance(choices, list):
+            alpha_codecs = sorted(set(choices) if alpha_codecs is None else set(alpha_codecs) & set(choices))
+    layer_export = {"supported": not layer_missing, "missing": layer_missing, "alpha_codecs": alpha_codecs if not layer_missing else None}
     return problems, {"encoder_quality_flag": quality, "overwrite_flag": overwrite, "platform_flag": platform_flag, "platforms": platforms, "place_flag": place_flag,
                       "optional_flags": optional_present,
-                      "template_support": template_support, "generator_support": generator_support, "generator_flags": generator_flags}
+                      "template_support": template_support, "generator_support": generator_support, "generator_flags": generator_flags,
+                      "layer_export": layer_export}
 
 
 class FfmpegSkill:

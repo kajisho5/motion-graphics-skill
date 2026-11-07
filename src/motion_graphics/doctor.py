@@ -57,6 +57,10 @@ def capability_status(skill_info: Optional[Any], ffdoc: Dict[str, Any]) -> Dict[
     # optional flags one element type needs (ADR-25: overlay --place, for rendered_layer)
     takes_place = getattr(skill_info, "takes_place", None)
     status["ffmpeg-skill-flag:overlay.place"] = "supported" if have_skill and callable(takes_place) and takes_place() else "unsupported"
+    # a request option rather than an element type (ADR-30: options.layer_export): background --transparent and graphics / overlay --keep-alpha
+    layer_export = getattr(skill_info, "layer_export", None)
+    status["ffmpeg-skill-feature:layer_export"] = ("supported" if have_skill and callable(layer_export) and layer_export().get("supported")
+                                                   else "unsupported")
     if have_skill and ffdoc.get("_unavailable"):
         # this ffmpeg-skill has no doctor to ask: nothing detected either way; output validation reports the truth per run
         for cap in ["ffmpeg", "ffprobe", *CORE_CAPABILITIES]:
@@ -174,6 +178,10 @@ def doctor_report(ffmpeg_skill_dir: Optional[str] = None, workspace: Optional[st
 
     element_types = element_type_status(caps)
     checks["element_types"] = element_types
+    # ADR-30: whether options.layer_export can be carried out, and with which alpha codecs
+    support = info.layer_export() if info is not None and info.supported else {"supported": False, "missing": ["ffmpeg-skill not usable"], "alpha_codecs": None}
+    checks["layer_export"] = {"status": "supported" if support.get("supported") else "unsupported", "missing": list(support.get("missing") or []),
+                              "alpha_codecs": support.get("alpha_codecs")}
     checks["unsupported_element_types"] = dict(UNSUPPORTED_ELEMENT_TYPES)
     checks["animations"] = animation_status(element_types)
     checks["unsupported_animations"] = dict(UNSUPPORTED_ANIMATIONS)

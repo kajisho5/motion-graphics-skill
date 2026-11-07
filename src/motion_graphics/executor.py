@@ -23,6 +23,7 @@ from .canonical import sha256_file, stable_hash
 from .colors import template_color
 from .errors import MotionGraphicsError
 from .fonts import ResolvedFont, resolve_font
+from .layerexport import ALPHA_CODECS, MANIFEST_NAME, alpha_step, layer_file_name, manifest_document
 from .layers import has_alpha, layer_placements, place_args
 from .regions import element_boxes, overlaps, resolve_regions
 from .textfit import fit as fit_text
@@ -35,6 +36,9 @@ MANIFEST_SCHEMA = f"{SKILL_ID}/manifest@1"
 WORK_DIR_NAME = ".motion-graphics"
 DURATION_TOLERANCE = 0.25  # seconds; each stage re-encodes with a forced constant frame rate (ffmpeg-skill cfr_args)
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+# ADR-30: the transparent canvas every layer is drawn on is QuickTime Animation (run-length coded: an empty picture costs almost nothing,
+# so a canvas the programme's length stays small); the layers themselves are in the requested alpha codec
+CANVAS_ALPHA_CODEC = "qtrle"
 
 
 @dataclass
@@ -129,6 +133,7 @@ class Executor:
             raise MotionGraphicsError("OUTPUT_ERROR", f"output already exists (set document.output.overwrite to replace it): {output_path}", {"reason": "exists", "path": str(output_path)})
 
         self._check_checkout(doc)
+        layer_paths = self._layer_paths(doc, video_path, output_path)
 
         source_meta = self.skill.probe(str(video_path), self.timeout)
         video = source_meta.get("video") or {}
@@ -209,6 +214,13 @@ class Executor:
         reserved = self._reserved_regions(doc, ordered, resolved_assets, fits, width, height, duration)
 
         document_id = stable_hash({"video_sha256": video_hash, "elements": [e.to_dict() for e in ordered]})[:16]
+        fps = 0.0
+        if layer_paths is not None:
+            # ADR-30: the canvas is made at the source's frame rate, so each layer's frames are the programme's frames
+            fps = float(video.get("fps") or 0.0)
+            if not fps > 0:
+                raise MotionGraphicsError("INVALID_INPUT", "document.options.layer_export: the frame rate of document.video.path could not be read, and the "
+                                          "transparent canvas is made at that rate", {"reason": "no_frame_rate", "path": str(video_path)})
 
         if self.dry_run:
             timeline = [dict(self._plan_entry(i, el, resolved_assets, resolved_fonts), **({"fit_result": fits[el.element_id]} if el.element_id in fits else {}))
@@ -218,6 +230,8 @@ class Executor:
                              "output": {"path": str(output_path)}, "timeline": timeline},
                     **({"reserved_regions": reserved} if reserved else {}),
                     **({"theme": self._theme_record(theme)} if theme else {}),
+                    **({"layer_export": self._layer_plan(doc, ordered, layer_paths, resolved_assets, fits, width, height, duration, fps)}
+                       if layer_paths is not None else {}),
                     "warnings": (warnings_for(theme) if theme else []) + self._region_warnings(reserved)}
 
         # A single-element document never has a non-final stage, so it never needs (or creates) the cache
@@ -225,7 +239,7 @@ class Executor:
         # A shape element's generated clip is a derived input that also lives there (ADR-22), so a document with a shape
         # gets the directory even when it has one element.
         work_dir: Optional[Path] = None
-        if len(ordered) > 1 or any(el.type == "shape" for el in ordered):
+        if len(ordered) > 1 or any(el.type == "shape" for el in ordered) or layer_paths is not None:
             work_dir = self.policy.resolve_work_dir(os.path.join(WORK_DIR_NAME, document_id))
             work_dir.mkdir(parents=True, exist_ok=True)
         output_path.parent.mkdir(parents=True, exist_ok=True)  # ffmpeg-skill does not create the output directory itself
@@ -315,6 +329,14 @@ class Executor:
                                  f"stage and fell back to a video+audio-only re-encode (dropped_non_av_streams)")
 
         final_meta = self._probe_and_check(output_path, width, height, prev_duration)
+        layer_result: Optional[Dict[str, Any]] = None
+        if layer_paths is not None:
+            assert work_dir is not None
+            layer_result = self._export_layers(doc, ordered, layer_paths, resolved_assets, resolved_fonts, fits, width, height, duration, fps,
+                                               work_dir, output_ext, crf, preset, platform, output_path, final_meta)
+            warnings += [f"elements[{layer['id']}]: ffmpeg-skill/{layer['tool'].split('/')[-1]} did not report its transparent layer verified "
+                         f"(alpha step: {(layer.get('alpha') or {}).get('reason') or ('ok' if (layer.get('alpha') or {}).get('ok') else 'missing')})"
+                         for layer in layer_result["layers"] if layer["verified"] is not True]
         return {
             "schema": RESPONSE_SCHEMA_ID, "skill": {"id": SKILL_ID, "version": VERSION}, "ok": True, "status": "ok", "dry_run": False,
             "output": {"path": str(output_path), "sha256": final_meta["sha256"], "size": final_meta["size"], "duration": final_meta["duration"],
@@ -332,6 +354,7 @@ class Executor:
             },
             **({"reserved_regions": reserved} if reserved else {}),
             **({"theme": self._theme_record(theme)} if theme else {}),
+            **({"layer_export": layer_result} if layer_result is not None else {}),
             "warnings": warnings,
         }
 
@@ -363,6 +386,20 @@ class Executor:
                                           f"ffmpeg-skill at {info.directory} (version {info.version}) does not have",
                                           {"reason": "ffmpeg_skill_lacks_flag", "element_id": el.element_id, "type": el.type, "flag": "ffmpeg-skill/overlay --place",
                                            "ffmpeg_skill_version": info.version}, retryable=False)
+        layer_opts = doc.options.get("layer_export")
+        if layer_opts is not None:
+            support = info.layer_export()
+            if not support.get("supported"):
+                raise MotionGraphicsError("TOOL_ERROR", f"document.options.layer_export needs {['ffmpeg-skill/' + f.replace('.', ' --', 1).replace('_', '-') for f in support.get('missing') or []]} "
+                                          f"(a transparent canvas, and graphics / overlay keeping its alpha), which the ffmpeg-skill at {info.directory} "
+                                          f"(version {info.version}) does not have", {"reason": "ffmpeg_skill_lacks_flag", "flags": list(support.get("missing") or []),
+                                                                                       "ffmpeg_skill_version": info.version}, retryable=False)
+            codecs = support.get("alpha_codecs")
+            for codec in (layer_opts["alpha_codec"], CANVAS_ALPHA_CODEC):
+                if codecs is not None and codec not in codecs:
+                    raise MotionGraphicsError("TOOL_ERROR", f"document.options.layer_export: the ffmpeg-skill at {info.directory} (version {info.version}) offers the alpha "
+                                              f"codecs {codecs}, not {codec!r}", {"reason": "ffmpeg_skill_lacks_alpha_codec", "alpha_codec": codec, "known": codecs},
+                                              retryable=False)
         platform = doc.options.get("platform")
         if platform is None:
             return
@@ -408,14 +445,18 @@ class Executor:
             params["font"] = font.to_provenance()
         return params
 
-    def _encode_flags(self, tool: str, crf: int, preset: str) -> List[str]:
+    def _encode_flags(self, tool: str, crf: int, preset: str, alpha: Optional[Tuple[str, str]] = None) -> List[str]:
         """The encoder flags of ffmpeg-skill/<tool> as the located checkout spells them: `--quality` (1.10+; 2.0 removed
         `--crf`) or `--crf` (older), same CRF scale either way; plus `--overwrite` where the checkout takes it (1.10+
         refuses to replace an existing output without it; older releases reject the flag). Overwrite consent was
         already checked against document.output.overwrite before anything rendered, and a stale intermediate is
         removed before its stage runs, so passing the flag never replaces a file this skill was not allowed to."""
         info = self.skill.info() if self.skill is not None else None
-        flags = [info.quality_flag(tool) if info is not None else "--crf", str(crf), "--preset", preset]
+        if alpha is not None:
+            # a layer (ADR-30): written in an alpha line, which has no x264 settings; the alpha flags take their place
+            flags = ["--keep-alpha", "--alpha-codec", alpha[0], "--alpha-mode", alpha[1]]
+        else:
+            flags = [info.quality_flag(tool) if info is not None else "--crf", str(crf), "--preset", preset]
         if info is not None and info.takes_overwrite(tool):
             flags.append("--overwrite")
         return flags
@@ -424,15 +465,20 @@ class Executor:
     # Returns (tool, argv, cwd): cwd is None except for a custom font_file (see the comment below).
     def _argv(self, el: GraphicsElement, stage_input: str, stage_output: str, asset: Optional[Dict[str, Any]],
               font: Optional[ResolvedFont], crf: int, preset: str, audio_stream: Optional[int] = None,
-              platform: Optional[str] = None, fit: Optional[Dict[str, Any]] = None) -> Tuple[str, List[str], Optional[str]]:
+              platform: Optional[str] = None, fit: Optional[Dict[str, Any]] = None,
+              alpha: Optional[Tuple[str, str]] = None) -> Tuple[str, List[str], Optional[str]]:
+        """`alpha` (alpha codec, alpha mode) draws the element on a transparent canvas as a layer (ADR-30): the same call, with the alpha
+        flags in place of the x264 ones and no --audio-stream (the canvas has no audio)."""
         p = el.parameters
+        if alpha is not None:
+            audio_stream = None
         if fit is not None:
             # the fitted texts (line breaks put in at the chosen break opportunities) replace the given ones; nothing is cut
             p = dict(p, **{key: "\n".join(t["lines"]) for key, t in fit["texts"].items()})
         spec = ELEMENT_TYPES[el.type]
         if spec["tool"] == "graphics":
             argv = [stage_input, "-o", stage_output, "--template", spec["template"],
-                    "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), *self._encode_flags("graphics", crf, preset)]
+                    "--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end), *self._encode_flags("graphics", crf, preset, alpha)]
             if audio_stream is not None:
                 argv += ["--audio-stream", str(audio_stream)]
             if platform is not None:
@@ -489,7 +535,7 @@ class Executor:
             argv += ["--margin", str(p["margin"])]
         if el.type != "rendered_layer":  # its --place pieces say when it shows (overlay refuses --start/--end with --place)
             argv += ["--start", fmt_seconds(el.start), "--end", fmt_seconds(el.end)]
-        argv += ["--opacity", fmt_number(p["opacity"]), *self._encode_flags("overlay", crf, preset)]
+        argv += ["--opacity", fmt_number(p["opacity"]), *self._encode_flags("overlay", crf, preset, alpha)]
         if audio_stream is not None:
             argv += ["--audio-stream", str(audio_stream)]
         if platform is not None:
@@ -559,11 +605,7 @@ class Executor:
         regions = resolve_regions(spec, width, height, duration)
         boxes = []
         for el in ordered:
-            dims = assets.get(el.element_id, {}).get("dims")
-            if el.type == "image_overlay" and dims is None:
-                meta = (self.skill.probe(assets[el.element_id]["path"], self.timeout) or {}).get("video") or {}
-                dims = (int(meta.get("width") or 0), int(meta.get("height") or 0)) if meta else None
-            b, precision = element_boxes(el, width, height, dims if dims and all(dims) else None, fits.get(el.element_id))
+            b, precision = self._element_boxes(el, assets, fits, width, height)
             boxes.append({"id": el.element_id, "type": el.type, "start": el.start, "end": el.end, "boxes": b, "precision": precision})
         found = overlaps(boxes, regions)
         report = {"on_overlap": spec["on_overlap"], "regions": [dict(r, box=list(r["box"])) for r in regions], "overlaps": found,
@@ -574,6 +616,144 @@ class Executor:
                                       + ", ".join(f"{o['element_id']} under {o['region']['kind']} {o['region']['id']} at {o['time'][0]:g}-{o['time'][1]:g}s" for o in found),
                                       {"reason": "reserved_region_overlap", "overlaps": found, "regions": report["regions"]})
         return report
+
+    def _element_boxes(self, el: GraphicsElement, assets: Dict[str, Dict[str, Any]], fits: Dict[str, Dict[str, Any]], width: int, height: int) -> Tuple[List[Any], str]:
+        """The boxes an element draws in at rest and their precision (regions.element_boxes); an image's size is probed once and kept."""
+        asset = assets.get(el.element_id, {})
+        dims = asset.get("dims")
+        if el.type in ("image_overlay", "logo") and dims is None:
+            meta = (self.skill.probe(asset["path"], self.timeout) or {}).get("video") or {}
+            dims = (int(meta.get("width") or 0), int(meta.get("height") or 0)) if meta else None
+            asset["dims"] = dims
+        return element_boxes(el, width, height, dims if dims and all(dims) else None, fits.get(el.element_id))
+
+    # ---- layer export (ADR-30)
+    def _layer_paths(self, doc: Any, video_path: Path, output_path: Path) -> Optional[Dict[str, Any]]:
+        """Where the layers and their manifest go, checked before anything renders: inside the workspace (PathPolicy), not the input or the
+        programme, and an existing file replaced only with document.output.overwrite. None when no layer export is asked for."""
+        opts = doc.options.get("layer_export")
+        if opts is None:
+            return None
+        where = "document.options.layer_export.directory"
+        directory = self.policy.resolve_write_path(opts["directory"], where, allow_dir=True)
+        files: Dict[str, Path] = {}
+        for el in doc.ordered_elements():
+            files[el.element_id] = self.policy.resolve_write_path(os.path.join(str(directory), layer_file_name(el.element_id, opts["alpha_codec"])), f"layer of elements[{el.element_id}]")
+        manifest = self.policy.resolve_write_path(os.path.join(str(directory), MANIFEST_NAME), "layer manifest")
+        for path in list(files.values()) + [manifest]:
+            if path in (video_path, output_path):
+                raise MotionGraphicsError("OUTPUT_ERROR", f"a layer export file would be {'document.video.path' if path == video_path else 'document.output.path'}: {path}",
+                                          {"reason": "layer_is_input" if path == video_path else "layer_is_output", "path": str(path)})
+            if path.exists() and not doc.overwrite:
+                raise MotionGraphicsError("OUTPUT_ERROR", f"layer export file already exists (set document.output.overwrite to replace it): {path}",
+                                          {"reason": "exists", "path": str(path)})
+        return {"directory": directory, "files": files, "manifest": manifest, "settings": dict(opts)}
+
+    @staticmethod
+    def _canvas_parameters(width: int, height: int, duration: float, fps: float) -> Dict[str, Any]:
+        """What ffmpeg-skill/background --transparent is asked for: the source's size, rate and length, in the canvas's alpha line."""
+        return {"width": width, "height": height, "duration": fmt_seconds(duration), "fps": fmt_number(fps), "alpha_codec": CANVAS_ALPHA_CODEC}
+
+    def _layer_box(self, el: GraphicsElement, assets: Dict[str, Dict[str, Any]], fits: Dict[str, Dict[str, Any]], width: int, height: int) -> Dict[str, Any]:
+        boxes, precision = self._element_boxes(el, assets, fits, width, height)
+        if not boxes:
+            return {"box": None, "box_precision": precision}
+        x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        x1, y1 = max(b[0] + b[2] for b in boxes), max(b[1] + b[3] for b in boxes)
+        return {"box": {"x": int(x0), "y": int(y0), "width": int(x1 - x0), "height": int(y1 - y0)}, "box_precision": precision}
+
+    def _layer_plan(self, doc: Any, ordered: Tuple[GraphicsElement, ...], paths: Dict[str, Any], assets: Dict[str, Dict[str, Any]],
+                    fits: Dict[str, Dict[str, Any]], width: int, height: int, duration: float, fps: float) -> Dict[str, Any]:
+        settings = paths["settings"]
+        return {"directory": str(paths["directory"]), "alpha_codec": settings["alpha_codec"], "alpha_mode": settings["alpha_mode"],
+                "manifest": {"path": str(paths["manifest"])},
+                "canvas": {"tool": "ffmpeg-skill/background", "parameters": self._canvas_parameters(width, height, duration, fps)},
+                "layers": [dict({"id": el.element_id, "type": el.type, "start": el.start, "end": el.end, "file": paths["files"][el.element_id].name,
+                                 "tool": f"ffmpeg-skill/{ELEMENT_TYPES[el.type]['tool']}"}, **self._layer_box(el, assets, fits, width, height))
+                           for el in ordered]}
+
+    def _canvas(self, work_dir: Path, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Make (or reuse) the transparent canvas: ffmpeg-skill/background --transparent, then a probe that it has the programme's size and length."""
+        identity = stable_hash({"skill_version": VERSION, "tool_versions": self.tool_versions, "generator": "background", "transparent": True, "parameters": params})
+        path = work_dir / f"canvas-{identity[:16]}{ALPHA_CODECS[CANVAS_ALPHA_CODEC]}"
+        manifest = path.with_name(path.stem + ".json")
+        record: Dict[str, Any] = {"tool": "ffmpeg-skill/background", "operation_id": identity, "parameters": params}
+        if self.reuse and self._reusable(identity, path, manifest):
+            record.update(status="reused", output_hash=json.loads(manifest.read_text(encoding="utf-8"))["output_hash"], seconds=0.0, tool_commands_observed=[])
+            return {"path": str(path), "record": record}
+        for stale in (path, manifest):
+            self._remove_partial(stale)
+        info = self.skill.info() if self.skill is not None else None
+        flags = ((info.features.get("generator_flags") or {}).get("background") or {}) if info is not None else {}
+        argv = ["-o", str(path), "--transparent", "--duration", params["duration"], "--width", str(params["width"]), "--height", str(params["height"]),
+                "--fps", params["fps"], "--alpha-codec", params["alpha_codec"]]
+        if flags.get("overwrite"):
+            argv.append("--overwrite")
+        try:
+            run = self.skill.run_tool("background", argv, self.timeout)
+            meta = self._validate_layer_file(path, "the transparent canvas", params["width"], params["height"], float(params["duration"]))
+        except MotionGraphicsError:
+            self._remove_partial(path)
+            raise
+        manifest.write_text(json.dumps({"schema": MANIFEST_SCHEMA, "operation_id": identity, "type": "transparent-canvas", "parameters": params, "input_hashes": [],
+                                        "output_hash": meta["sha256"], "output_size": meta["size"], "duration": meta["duration"], "tool": "ffmpeg-skill/background",
+                                        "tool_versions": self.tool_versions, "skill": SKILL_ID, "skill_version": VERSION}, indent=2, sort_keys=True), encoding="utf-8")
+        record.update(status="rendered", output_hash=meta["sha256"], seconds=run.seconds, tool_commands_observed=run.commands,
+                      verified=run.data.get("verified") if isinstance(run.data, dict) else None)
+        return {"path": str(path), "record": record}
+
+    def _validate_layer_file(self, path: Path, what: str, width: int, height: int, duration: float) -> Dict[str, Any]:
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise MotionGraphicsError("OUTPUT_ERROR", f"{what}: ffmpeg-skill reported success but wrote no file", {"reason": "missing_output", "path": str(path)})
+        meta = self.skill.probe(str(path), self.timeout)
+        video = meta.get("video") or {}
+        if (int(video.get("width") or 0), int(video.get("height") or 0)) != (width, height):
+            raise MotionGraphicsError("VALIDATION_ERROR", f"{what}: {video.get('width')}x{video.get('height')}, not the programme's {width}x{height}",
+                                      {"reason": "resolution_mismatch", "path": str(path)})
+        got = float(meta.get("duration") or 0.0)
+        if abs(got - duration) > DURATION_TOLERANCE:
+            raise MotionGraphicsError("VALIDATION_ERROR", f"{what}: lasts {got:.3f}s, not the programme's {duration:.3f}s",
+                                      {"reason": "duration_mismatch", "duration": got, "expected": duration, "path": str(path)})
+        return {"sha256": sha256_file(str(path)), "size": path.stat().st_size, "duration": got}
+
+    def _export_layers(self, doc: Any, ordered: Tuple[GraphicsElement, ...], paths: Dict[str, Any], assets: Dict[str, Dict[str, Any]],
+                       fonts_: Dict[str, ResolvedFont], fits: Dict[str, Dict[str, Any]], width: int, height: int, duration: float, fps: float,
+                       work_dir: Path, output_ext: str, crf: int, preset: str, platform: Optional[str], output_path: Path,
+                       programme: Dict[str, Any]) -> Dict[str, Any]:
+        """Every element drawn alone on the transparent canvas, with the call that burned it into the programme (ADR-30), then the manifest."""
+        settings = paths["settings"]
+        alpha = (settings["alpha_codec"], settings["alpha_mode"])
+        canvas = self._canvas(work_dir, self._canvas_parameters(width, height, duration, fps))
+        paths["directory"].mkdir(parents=True, exist_ok=True)
+        layers: List[Dict[str, Any]] = []
+        for el in ordered:
+            target: Path = paths["files"][el.element_id]
+            self._remove_partial(target)  # replacing it was consented to (document.output.overwrite), checked before anything rendered
+            asset = assets.get(el.element_id)
+            if el.type == "shape":
+                clip = {"identity": self._shape_clip_identity(el, crf, preset), "parameters": self._shape_clip_parameters(el)}
+                asset = {"path": self._shape_clip(el, clip, work_dir, output_ext, crf, preset)["path"]}
+            tool, argv, cwd = self._argv(el, canvas["path"], str(target), asset, fonts_.get(el.element_id), crf, preset, None, platform,
+                                         fit=fits.get(el.element_id), alpha=alpha)
+            try:
+                run = self.skill.run_tool(tool, argv, self.timeout, cwd)
+                meta = self._validate_layer_file(target, f"elements[{el.element_id}] ({el.type}) layer", width, height, duration)
+            except MotionGraphicsError:
+                self._remove_partial(target)
+                raise
+            data = run.data if isinstance(run.data, dict) else {}
+            layers.append(dict({"id": el.element_id, "type": el.type, "start": el.start, "end": el.end}, **self._layer_box(el, assets, fits, width, height),
+                               file=target.name, path=str(target), sha256=meta["sha256"], size=meta["size"], duration=meta["duration"],
+                               tool=f"ffmpeg-skill/{tool}", alpha_codec=data.get("alpha_codec"), alpha_mode=data.get("alpha_mode"),
+                               verified=data.get("verified") if isinstance(data.get("verified"), bool) else None, alpha=alpha_step(data),
+                               seconds=run.seconds, tool_commands_observed=run.commands))
+        prog = {"file": output_path.name, "sha256": programme["sha256"], "width": width, "height": height, "duration": programme["duration"], "fps": fmt_number(fps)}
+        doc_manifest = manifest_document(prog, settings, {k: v for k, v in canvas["record"]["parameters"].items()}, layers)
+        manifest_path: Path = paths["manifest"]
+        manifest_path.write_text(json.dumps(doc_manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return {"directory": str(paths["directory"]), "manifest": {"path": str(manifest_path), "sha256": sha256_file(str(manifest_path))},
+                "alpha_codec": settings["alpha_codec"], "alpha_mode": settings["alpha_mode"], "canvas": canvas["record"], "layers": layers,
+                "verified": doc_manifest["verified"]}
 
     @staticmethod
     def _theme_record(theme: Dict[str, Any]) -> Dict[str, Any]:

@@ -40,6 +40,8 @@ motion-graphics run request.json --json --workspace .                 # 4. rende
    before spending a real render on it. It resolves and probes inputs but writes no media.
 4. **`run`** to actually render. Read `output.sha256`/`output.path` for the artifact and `provenance` for the full
    chain (source video, per-element asset/font identities, operation chain, output hash).
+   With `options.layer_export` the run also writes each element alone on transparent (`response.layer_export`: one file per
+   element and a manifest); check `layer_export.verified` (ffmpeg-skill read every layer's alpha back) before handing them on.
 
 Full request/response shapes: `motion-graphics contract --json` (`request.shape`, `response.success.{run,plan,validate}`).
 
@@ -53,6 +55,8 @@ Every failure is `{"ok": false, "error": {"code", "message", "retryable", "detai
 - `TOOL_ERROR` with `retryable: false` and `details.reason` `ffmpeg_skill_lacks_template` / `ffmpeg_skill_lacks_platform_flag` /
   `ffmpeg_skill_lacks_platform` — the located ffmpeg-skill is too old for what was asked (a `sticker`/`hook`/`meme` element, or
   `options.platform`); nothing was rendered. Update ffmpeg-skill or ask for something it can do; `doctor` lists the element types it cannot.
+  `ffmpeg_skill_lacks_flag` / `ffmpeg_skill_lacks_alpha_codec` on `options.layer_export` is the same: that checkout cannot draw on a
+  transparent canvas (or not in that alpha codec); drop the option or update ffmpeg-skill (`doctor`: `checks.layer_export`).
 - Anything else — the request itself needs to change before retrying. In particular:
   - `UNSUPPORTED_OPERATION` on an element `type` or an `animation.kind` — it is not implemented (check
     `unsupported_element_types` / `unsupported_animations` in the contract for why and what to use instead); do

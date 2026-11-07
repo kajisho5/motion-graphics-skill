@@ -252,6 +252,23 @@ A clip that does not decode with alpha is refused (`INVALID_INPUT`, `layer_witho
 whose alpha the overlay's decoder drops. A checkout without `--place` reports the type unsupported and refuses it before
 rendering. See ADR-25.
 
+## Layer export (each element alone on transparent)
+
+`options.layer_export: {"directory": "layers", "alpha_codec": "prores4444", "alpha_mode": "straight"}` also writes, beside the
+burned programme, every element drawn alone on a transparent picture: one file per element (`layers/<element id>.mov`, or
+`.webm` for `vp9`) and `layers/manifest.json` (element id, type, start, end, box, file, sha256, the alpha check). Each layer
+has the programme's size, frame rate and length and starts at 0 s, so laid on an upper track over the clean video it rebuilds
+the programme; the graphics can then be swapped or rearranged in an NLE without rendering the whole programme again.
+
+How: `ffmpeg-skill/background --transparent` makes one canvas the size, rate and length of the source, and each element is
+drawn on it by the same `graphics` / `overlay` call that burned it, with `--keep-alpha --alpha-codec --alpha-mode`.
+ffmpeg-skill reads each layer's alpha back (its `alpha` verification step), and the result records `alpha_codec`,
+`alpha_mode`, the `alpha` step and `verified` per layer (`response.layer_export`). `alpha_codec` is `prores4444` (default),
+`qtrle`, `png` or `vp9`. An existing layer file is replaced only with `document.output.overwrite`. A checkout without
+`--transparent` / `--keep-alpha` (ffmpeg-skill before 3.2.3) refuses the option before anything renders (`TOOL_ERROR`,
+`ffmpeg_skill_lacks_flag`), and `doctor` reports `ffmpeg-skill-feature:layer_export`. The test composites the layers over the
+clean video with `ffmpeg-skill/overlay` and checks the burned programme comes back at 30 dB PSNR or more. See ADR-30.
+
 ## Timeline validation
 
 - `start >= 0`, `end > start`, both **finite** (`NaN`/`Infinity` are rejected as `INVALID_TIME_RANGE`).

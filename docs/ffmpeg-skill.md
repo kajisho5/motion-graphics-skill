@@ -66,6 +66,13 @@ what this skill emits:
 - `background` (optional, `adapter.GENERATOR_TOOLS`; `shape` only, ADR-22): `output`, `duration`, `width`, `height`, `color`,
   `json`; `quality`|`crf`, `preset` and `overwrite` when offered. A checkout without the tool or these flags reports `shape`
   unsupported; it is never needed to locate a checkout
+- Layer export (`document.options.layer_export`, ADR-30; `layerexport.LAYER_EXPORT_FLAGS`): `background` `transparent`, `fps`,
+  `alpha_codec`, `alpha_mode` (the transparent canvas, always `--alpha-codec qtrle`); `graphics` and `overlay` `keep_alpha`,
+  `alpha_codec`, `alpha_mode` (each layer: the burn's own argv on the canvas, with these in place of `quality`|`crf` / `preset`
+  and without `audio_stream`). Detected like the optional flags; a checkout without every one of them (ffmpeg-skill before
+  3.2.3) refuses the option before rendering, and doctor reports `ffmpeg-skill-feature:layer_export` with the `--alpha-codec`
+  choices it offers. Each layer's `alpha_codec`, `alpha_mode`, `verified` and `alpha` verification step are read off the tool's
+  own result
 
 ## `dropped_non_av_streams` (ffmpeg-skill 0.12.1)
 

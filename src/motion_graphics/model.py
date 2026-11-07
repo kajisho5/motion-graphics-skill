@@ -779,7 +779,7 @@ def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> Grap
 
     options_raw = top.get("options", {})
     options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform", "style", "brand_kit",
-                                                         "reserved_regions", "themes", "theme"), ())
+                                                         "reserved_regions", "themes", "theme", "layer_export"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -811,6 +811,14 @@ def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> Grap
     # YouTube end-screen elements and card teasers (ADR-28): structural check here, boxes once the frame size is known
     reserved = parse_reserved_regions(options["reserved_regions"]) if options.get("reserved_regions") is not None else None
 
+    # every element drawn alone on a transparent picture, beside the programme (ADR-30): structural check here, the directory and the
+    # checkout's flags at run time
+    layer_export = None
+    if options.get("layer_export") is not None:
+        from .layerexport import parse_layer_export
+        layer_export = parse_layer_export(options["layer_export"], [el.element_id for el in elements])
+
     return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
                              {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform,
-                              "style": default_style, "brand_kit": brand_kit, "reserved_regions": reserved, "themes": theme_options})
+                              "style": default_style, "brand_kit": brand_kit, "reserved_regions": reserved, "themes": theme_options,
+                              "layer_export": layer_export})

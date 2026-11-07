@@ -16,6 +16,7 @@ from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
 from .styles import contract_section as style_presets_section
 from .regions import contract_section as reserved_regions_section
 from .themes import contract_section as themes_section
+from .layerexport import contract_section as layer_export_section
 from .textfit import contract_section as text_fit_section
 from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FIT_FIELDS, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, PLATFORM_NAMES, POSITION_NAMES,
                     REQUEST_SCHEMA_ID, UNSUPPORTED_ANIMATIONS, UNSUPPORTED_ELEMENT_TYPES)
@@ -149,6 +150,8 @@ def skill_contract() -> Dict[str, Any]:
         "reserved_regions": reserved_regions_section(),
         # ADR-29: brand themes -- colours, font, logo and spacing from one file, switchable
         "themes": themes_section(),
+        # ADR-30: every element also written alone on a transparent picture, one file each, with a manifest
+        "layer_export": layer_export_section(),
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
         "fonts": {"registry": {fid: spec["family"] for fid, spec in FONT_REGISTRY.items()}, "default_font_id": DEFAULT_FONT_ID,
                   "custom_font_file": {"allowed_extensions": list(ALLOWED_FONT_EXTENSIONS), "path_policy": True, "provenance": "font_file_hash (sha256)"},
@@ -162,7 +165,7 @@ def skill_contract() -> Dict[str, Any]:
         "execution": {"mode": "local", "canonical_invocation": ["motion-graphics", "run", "-", "--json"], "stdin": REQUEST_SCHEMA_ID,
                       "stdout": f"exactly one {SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION} document", "stderr": "diagnostics only",
                       "executables": ["python3 <ffmpeg-skill>/scripts/{probe,graphics,overlay}.py (argv lists)",
-                                      "python3 <ffmpeg-skill>/scripts/background.py (argv list; shape elements only, ADR-22)"],
+                                      "python3 <ffmpeg-skill>/scripts/background.py (argv list; shape elements, ADR-22, and the transparent canvas of a layer export, ADR-30)"],
                       "executable_resolution": "ffmpeg-skill directory: --ffmpeg-skill, MOTION_GRAPHICS_FFMPEG_SKILL_DIR, VIDEO_AGENT_FFMPEG_SKILL_DIR, ~/.claude/skills/ffmpeg-skill, ./vendor/ffmpeg-skill, ../ffmpeg-skill; ffmpeg/ffprobe: PATH lookup by ffmpeg-skill",
                       "shell": False, "arbitrary_executables": False, "arbitrary_filters": False, "network": False, "input_mutation": False, "ai": False},
         "ffmpeg_skill": {"contract_version": KNOWN_CONTRACT_VERSION,
@@ -187,14 +190,17 @@ def skill_contract() -> Dict[str, Any]:
                                             "parameters": {"...": "see element_types[].parameters"}, "animation?": {"kind": "fade", "parameters": {"duration": 0.5}}}],
                               "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0, "platform?": "tiktok",
                                            "style?": "news", "reserved_regions?": {"end_screen?": {"duration?": 20}, "cards?": [{"time": 30}], "on_overlap?": "report"},
-                                           "themes?": {"brand_a": "themes/brand_a.json"}, "theme?": "brand_a", "brand_kit?": {"primary?": "RRGGBB", "secondary?": "RRGGBB", "background?": "RRGGBB", "text?": "RRGGBB"}},
+                                           "themes?": {"brand_a": "themes/brand_a.json"}, "theme?": "brand_a", "brand_kit?": {"primary?": "RRGGBB", "secondary?": "RRGGBB", "background?": "RRGGBB", "text?": "RRGGBB"},
+                                           "layer_export?": {"directory": "layers", "alpha_codec?": "prores4444", "alpha_mode?": "straight"}},
                               "elements[].style?": "a style_presets name",
                               "elements[].fit?": {"width": 600, "max_lines?": 2, "min_scale?": 0.6, "profile?": "ja-kinsoku", "lang?": "ja"}}},
         "response": {"schema": f"{SKILL_ID}/response@{RESPONSE_SCHEMA_VERSION}",
                      # keys a run / plan response carries only when the request asks for them (success.run / success.plan list the
                      # keys every response has)
                      "conditional": {"reserved_regions": {"in": ["run", "plan"], "when": "options.reserved_regions is given",
-                                                          "shape": "see reserved_regions.result"}},
+                                                          "shape": "see reserved_regions.result"},
+                                     "layer_export": {"in": ["run", "plan"], "when": "options.layer_export is given",
+                                                      "shape": "see layer_export.result"}},
                      "success": {
                          "run": {"ok": True, "status": "ok", "dry_run": False, "output": "{path, sha256, size, duration, width, height}",
                                  "timeline": "[{id, type, start, end}]", "operations": "[StageResult]", "reused": "bool", "engine": {}, "provenance": {},
