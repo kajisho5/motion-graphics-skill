@@ -35,8 +35,9 @@ and report what it did. It has no opinion about content.
 | `fonts.py` | Closed font registry + PathPolicy-checked custom font files. |
 | `security.py` | `PathPolicy`: workspace confinement, allowed input roots, symlink-escape resolution, safe file names. |
 | `canonical.py` | Canonical JSON + sha256 for every identity. |
-| `adapter.py` | The only module that starts a subprocess. Locates and calls `ffmpeg-skill/{probe,graphics,overlay}.py` with typed argv, and `background.py` for a `shape` element when the checkout has it (ADR-22). |
+| `adapter.py` | The only module that starts a subprocess. Locates and calls `ffmpeg-skill/{probe,graphics,overlay}.py` with typed argv, and `background.py` for a `shape` element and a layer export's transparent canvas when the checkout has it (ADR-22, ADR-30). |
 | `executor.py` | Request -> render plan -> per-element ffmpeg-skill call (a `shape` first generates its rectangle clip, a derived input with its own identity and cache entry: ADR-22) -> output validation -> structured response + provenance. Reuse/idempotency of non-final stages. |
+| `layerexport.py` | `options.layer_export` (ADR-30): the request option, layer file names, the manifest and the contract block; the executor draws each element on a transparent canvas with the call that burned it. |
 | `contract.py` | `motion-graphics skill --json` — generated from the same tables `executor.py`/`model.py` run on. |
 | `doctor.py` | `motion-graphics doctor --json` — environment vs. contract, three-valued capability status. |
 | `errors.py` | The 13-code structured error model. |

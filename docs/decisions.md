@@ -754,6 +754,8 @@ checkout without `--place` the same test asserts the up-front refusal. Run again
 
 ## ADR-26: layer export is not built: no ffmpeg-skill tool can draw an element onto a transparent picture
 
+*Superseded by ADR-30* (2026-11-07): ffmpeg-skill 3.2.3 has what this ADR asked for, and the layer export is built there.
+
 **Context.** Roadmap step 8 asks for each element rendered alone on transparent, with the same timing, one file per element and a
 manifest (element id, type, start, end, box), so the graphics can be rebuilt in an NLE, and checks it by compositing the layers over the
 clean programme and comparing with the burned one within a stated PSNR. It needs alpha masters from ffmpeg-skill.
@@ -912,3 +914,78 @@ reads back from the pixels the lower third's accent in each theme's primary (and
 theme's text colour, and each theme's logo; and from ffmpeg-skill's report (or, on a checkout that does not report it, the command it
 ran) that the lower third and the title were drawn with each theme's font (a registry font for one, a font file for the other). A
 low-contrast theme gives one warning per failing pair. Run against ffmpeg-skill 3.2.0 (main), 2.24.1 and 0.12.5.
+
+## ADR-30: layer export: each element drawn alone on a transparent canvas by the call that burned it, one file each, with a manifest
+
+**Context.** Roadmap step 8 (ADR-26 recorded why it could not be built): beside the burned programme, each element rendered alone on
+transparent with the same timing, one file per element and a manifest (element id, type, start, end, box), so the graphics can be rebuilt
+in an NLE; done when the layers composited over the clean programme equal the burned programme within a stated PSNR. ffmpeg-skill 3.2.3
+added what ADR-26 asked for: `background.py --transparent` (a canvas whose every pixel is alpha 0, checked), and `graphics.py` /
+`overlay.py --keep-alpha` (drawn onto an input's alpha and written in an alpha codec, `--alpha-codec prores4444|qtrle|png|vp9`,
+`--alpha-mode straight|premultiplied`, with an `alpha` verification step and `verified`).
+
+**Decision.**
+- *Request:* `options.layer_export {directory, alpha_codec? (prores4444), alpha_mode? (straight)}`; one option for the whole document,
+  like `platform`. Every element gets a layer; there is no per-element switch (a caller that wants fewer layers sends fewer elements).
+  Element ids that differ only in letter case are refused with the option (`layer_name_collision`): their files would be one file on a
+  case-insensitive file system.
+- *Files:* `<directory>/<element id>.mov` (`.webm` for vp9) and `<directory>/manifest.json`, all through PathPolicy (inside the workspace,
+  safe names: an id that is a Windows device name is refused there), none the input or the programme, an existing one replaced only with
+  `document.output.overwrite`; all checked before anything renders.
+- *Timing:* each layer has the programme's size, frame rate and length and starts at 0 s, the element showing at its own start..end.
+  Not a clip of the element's window: a `video_overlay` / `shape` shows the frames of its clip at the programme's own times (overlay
+  `--video` without `--place` does not re-time the clip), so only a full-length canvas gives the same frames without re-timing anything
+  here. A layer laid at 0 s on an upper track needs no offsets.
+- *How:* one canvas, `ffmpeg-skill/background --transparent` at the source's width, height, frame rate (as probed, a decimal) and
+  duration, in ProRes 4444 (ffmpeg-skill's default alpha line: a YUV picture with alpha, like the video each element is burned into; the
+  layers are in the requested codec), then `ffmpeg-skill/color --retag` (a stream copy) gives it the programme's colour tags (`bt709` for
+  an SDR programme; `bt2020-pq` / `bt2020-hlg` / `bt601` when the programme says so; none when it names none of these). It is a derived
+  input in the work dir with its own identity (tags included) and manifest, reused like a shape clip.
+- *Colour tags:* graphics / overlay `--keep-alpha` keep the tags of the picture they draw on, so every layer carries the canvas's. An
+  untagged layer is not harmless: a compositor that negotiates colour (FFmpeg 7.1 and later, which ffmpeg-skill/overlay uses there)
+  read it as "unknown" and converted the BT.709 picture under it, everywhere, on every pass (each pass lost ~32 dB of PSNR where the
+  layer was transparent; CI on FFmpeg 8.0 and 9.0 measured 20 dB for the stack). Retagged, a pass changes the picture under a transparent
+  layer no more than a programme stage does (54-58 dB). The range tag is left as the alpha line writes it (unset): `--retag` sets the
+  matrix, primaries and transfer.
+  Each element is drawn on it by `Executor._argv`, the same function that builds its burn: the same template / text / image / clip,
+  position, margin, `--platform`, text fit, timing and fade; `--keep-alpha --alpha-codec C --alpha-mode M` take the place of the x264
+  `--quality`/`--preset`, and `--audio-stream` is left out (the canvas has no audio). A shape's rectangle clip is the one the programme
+  used. Layers are written after the programme, in render order.
+- *Verification and reporting:* each layer is probed (size, length; a mismatch is `VALIDATION_ERROR`, like a stage); ffmpeg-skill's own
+  result gives `alpha_codec`, `alpha_mode`, the `alpha` step (stored alpha plane, alpha at or above the canvas's in every frame) and
+  `verified`, recorded per layer in `response.layer_export.layers[]` and the manifest. A layer ffmpeg-skill does not report verified is a
+  warning and makes `layer_export.verified` false; it does not fail the run, whose programme is already checked. The plan
+  (`plan`/`run --dry-run`) lists the files, the canvas and each layer's call and box, and writes nothing.
+- *Box:* the element's box at rest from `regions.element_boxes` (the reserved-regions arithmetic, ADR-28), with its precision: exact for a
+  shape and a sized image / video / layer, estimated for templates. This skill reads no pixels of its own (ADR-1), so a template's box is
+  not measured from the layer. The theme `logo` element now gets the image's box there too (it fell through to the full frame before).
+- *Checkout:* the flags are detected like any optional flag (ADR-18, `layerexport.LAYER_EXPORT_FLAGS`, choices of `--alpha-codec`
+  from the contract or `--help`). Without all of them the option is `TOOL_ERROR` before anything renders (`ffmpeg_skill_lacks_flag`,
+  `details.flags`; `color --retag` is among them), and a codec the checkout does not offer is `ffmpeg_skill_lacks_alpha_codec`; doctor reports capability
+  `ffmpeg-skill-feature:layer_export` and `checks.layer_export`. 3.2.3 and later have them; 3.0.0, 2.24.1 and 0.12.5 do not.
+
+**The stated PSNR.** Laid over the clean video with ffmpeg-skill/overlay (`--video`, top-left, margin 0, in the manifest's order), the
+layers give the burned programme back at an average PSNR of at least 30 dB over the whole programme, and at least 5 dB closer than the
+clean video is. Measured 34.1 dB (the clean video: 15.2 dB) on FFmpeg 6.1 for a title, a lower third, a fading text overlay, an image and a
+shape on the 320x180 test video, and above 30 dB on CI's FFmpeg 8.0 (Linux, Windows) and 9.0 (macOS). The clean fixture is untagged; the
+programme reads it as BT.709 (ffmpeg-skill labels an untagged source so), so the test labels it the same way (`color --retag bt709`, a
+stream copy) before compositing, as a delivered clean programme is tagged. The residue is at anti-aliased edges and semi-transparent plates: the burn draws onto 4:2:0 in one pass, the layer is
+drawn at 4:4:4 against a transparent black and converted to 4:2:0 when composited, and the two programmes are separate H.264 encodes.
+
+**Not here.** One layer for the whole graphics track (the programme minus the video) is not offered: per element is what an NLE rebuild
+needs, and their stack is the same picture. A `rendered_layer` still refuses a VP9 alpha WebM as its input (ADR-25); that is a separate
+question from writing vp9 layers here.
+
+**Consumers.** New top-level `layer_export` block, `response.conditional.layer_export`, `request.shape.options?.layer_export?`, the alpha
+flags in `ffmpeg_skill.flags_used` (graphics, overlay), `ffmpeg-skill/color` among `dependencies[0].tools` / `delegates_to`, and
+`execution.executables` naming background's second use and color.py --retag. No element type,
+parameter, `animations`, `provenance` or `colors` entry changes. `response` and `execution` are fatal drift keys for the agent's pin
+until it re-pins; `check_contract()` is unaffected.
+
+**Verified.** `tests/test_layer_export.py` renders a title, a lower third, a fading text overlay, an image and a shape with layers, checks
+every layer `verified` with its `alpha` step, the manifest (ids, types, times, exact boxes for the image and the shape, the programme's
+sha256), that the shape's layer is transparent before its window and around the rectangle and opaque navy on it, then composites the
+layers over the clean video with ffmpeg-skill/overlay and measures the PSNR against the burned programme; a second run reuses the canvas;
+a qtrle / premultiplied layer is written and reported as such; an existing layer without overwrite is refused before rendering. On a
+checkout without the flags the same tests assert the up-front refusal. Every layer is checked to carry the BT.709 tags. Run against
+ffmpeg-skill 3.2.3 (main), 3.0.0 and 0.12.5.

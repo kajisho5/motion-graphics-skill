@@ -170,7 +170,7 @@ def element_boxes(el: Any, W: int, H: int, asset_size: Optional[Tuple[int, int]]
     if t == "shape":
         x, y = _place(p["position"], p["width"], p["height"], W, H, p.get("margin", 0))
         return [(x, y, p["width"], p["height"])], ("exact" if "margin" in p else "estimated")
-    if t in ("image_overlay", "video_overlay", "rendered_layer"):
+    if t in ("image_overlay", "video_overlay", "rendered_layer", "logo"):
         if asset_size is None:
             return [], "unmeasured"
         w0, h0 = asset_size

@@ -113,8 +113,10 @@ type, a new top-level key), before merging.
   `meme`, `video_overlay` get `"none"` (verified by reading each filter chain, not assumed). A configurable slide/move/scale/easing is not
   available because `overlay.py` still takes only a static position/scale and `--fade`; ffmpeg-skill's `caption.py --animate none|fade|pop|slide`
   shows typed animation exists upstream, for captions only. Do not add one without a typed, parameterised delegate behind it (ADR-1/ADR-2).
-- **No transparent (alpha) output.** ffmpeg-skill has no `yuva`/ProRes 4444/PNG-with-alpha output anywhere (`--codec prores` is 422 HQ,
-  `yuv422p10le`); this skill only burns graphics into a given video. Keyed overlay assets for a switcher/NLE need an upstream capability first.
+- **Transparent (alpha) output is per element, beside the programme** (ADR-30, `options.layer_export`): ffmpeg-skill 3.2.3 added
+  `background --transparent` and graphics / overlay `--keep-alpha`, and each element is drawn alone on a transparent canvas with the burn's
+  own call. Older checkouts refuse the option up front. The programme itself stays opaque H.264; there is no "whole graphics track" layer
+  (one per element, composited in render order, is what the manifest describes).
 - The pinned agent-side contract is `0.1.0`. A **new element type, a new top-level key (`platforms`, `constraints`), or a new `animation`
   string value is safe** (verified additive again for ADR-19). A **new parameter `type`** (anything other than `string`, `integer`,
   `number`, `boolean`, `color`, `position`, `font`, `path`) is **not** safe: it breaks `check_contract()` outright (ADR-11 explains the

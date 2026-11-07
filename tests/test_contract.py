@@ -99,7 +99,8 @@ def test_contract_os_registry_contract_version_and_dependencies():
     assert c["contract_version"] == 1
     (dep,) = c["dependencies"]
     assert dep["skill_id"] == "ffmpeg-skill" and dep["version_range"] == ">=1.0 <3.0" and dep["range_of"] == "contract_version"
-    assert dep["tools"] == [f"ffmpeg-skill/{t}" for t in ("probe", "graphics", "overlay", "background")]   # background: shape only (ADR-22)
+    # background: shape (ADR-22) and the layer export canvas; color: the canvas's colour tags (ADR-30)
+    assert dep["tools"] == [f"ffmpeg-skill/{t}" for t in ("probe", "graphics", "overlay", "background", "color")]
 
 
 def test_contract_forbidden_fields_present():
