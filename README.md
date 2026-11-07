@@ -260,7 +260,8 @@ burned programme, every element drawn alone on a transparent picture: one file p
 has the programme's size, frame rate and length and starts at 0 s, so laid on an upper track over the clean video it rebuilds
 the programme; the graphics can then be swapped or rearranged in an NLE without rendering the whole programme again.
 
-How: `ffmpeg-skill/background --transparent` makes one canvas the size, rate and length of the source, and each element is
+How: `ffmpeg-skill/background --transparent` makes one canvas the size, rate and length of the source, `ffmpeg-skill/color --retag`
+gives it the programme's colour tags (so every layer says BT.709 for an SDR programme, as the programme does), and each element is
 drawn on it by the same `graphics` / `overlay` call that burned it, with `--keep-alpha --alpha-codec --alpha-mode`.
 ffmpeg-skill reads each layer's alpha back (its `alpha` verification step), and the result records `alpha_codec`,
 `alpha_mode`, the `alpha` step and `verified` per layer (`response.layer_export`). `alpha_codec` is `prores4444` (default),

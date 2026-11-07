@@ -937,8 +937,16 @@ added what ADR-26 asked for: `background.py --transparent` (a canvas whose every
   `--video` without `--place` does not re-time the clip), so only a full-length canvas gives the same frames without re-timing anything
   here. A layer laid at 0 s on an upper track needs no offsets.
 - *How:* one canvas, `ffmpeg-skill/background --transparent` at the source's width, height, frame rate (as probed, a decimal) and
-  duration, in `qtrle` (run-length coded: an empty picture costs almost nothing, so a canvas the programme's length stays small; the
-  layers are in the requested codec). It is a derived input in the work dir with its own identity and manifest, reused like a shape clip.
+  duration, in ProRes 4444 (ffmpeg-skill's default alpha line: a YUV picture with alpha, like the video each element is burned into; the
+  layers are in the requested codec), then `ffmpeg-skill/color --retag` (a stream copy) gives it the programme's colour tags (`bt709` for
+  an SDR programme; `bt2020-pq` / `bt2020-hlg` / `bt601` when the programme says so; none when it names none of these). It is a derived
+  input in the work dir with its own identity (tags included) and manifest, reused like a shape clip.
+- *Colour tags:* graphics / overlay `--keep-alpha` keep the tags of the picture they draw on, so every layer carries the canvas's. An
+  untagged layer is not harmless: a compositor that negotiates colour (FFmpeg 7.1 and later, which ffmpeg-skill/overlay uses there)
+  read it as "unknown" and converted the BT.709 picture under it, everywhere, on every pass (each pass lost ~32 dB of PSNR where the
+  layer was transparent; CI on FFmpeg 8.0 and 9.0 measured 20 dB for the stack). Retagged, a pass changes the picture under a transparent
+  layer no more than a programme stage does (54-58 dB). The range tag is left as the alpha line writes it (unset): `--retag` sets the
+  matrix, primaries and transfer.
   Each element is drawn on it by `Executor._argv`, the same function that builds its burn: the same template / text / image / clip,
   position, margin, `--platform`, text fit, timing and fade; `--keep-alpha --alpha-codec C --alpha-mode M` take the place of the x264
   `--quality`/`--preset`, and `--audio-stream` is left out (the canvas has no audio). A shape's rectangle clip is the one the programme
@@ -953,13 +961,15 @@ added what ADR-26 asked for: `background.py --transparent` (a canvas whose every
   not measured from the layer. The theme `logo` element now gets the image's box there too (it fell through to the full frame before).
 - *Checkout:* the flags are detected like any optional flag (ADR-18, `layerexport.LAYER_EXPORT_FLAGS`, choices of `--alpha-codec`
   from the contract or `--help`). Without all of them the option is `TOOL_ERROR` before anything renders (`ffmpeg_skill_lacks_flag`,
-  `details.flags`), and a codec the checkout does not offer is `ffmpeg_skill_lacks_alpha_codec`; doctor reports capability
+  `details.flags`; `color --retag` is among them), and a codec the checkout does not offer is `ffmpeg_skill_lacks_alpha_codec`; doctor reports capability
   `ffmpeg-skill-feature:layer_export` and `checks.layer_export`. 3.2.3 and later have them; 3.0.0, 2.24.1 and 0.12.5 do not.
 
 **The stated PSNR.** Laid over the clean video with ffmpeg-skill/overlay (`--video`, top-left, margin 0, in the manifest's order), the
 layers give the burned programme back at an average PSNR of at least 30 dB over the whole programme, and at least 5 dB closer than the
-clean video is. Measured 34.1 dB (the clean video: 15.2 dB) for a title, a lower third, a fading text overlay, an image and a shape on the
-320x180 test video. The residue is at anti-aliased edges and semi-transparent plates: the burn draws onto 4:2:0 in one pass, the layer is
+clean video is. Measured 34.1 dB (the clean video: 15.2 dB) on FFmpeg 6.1 for a title, a lower third, a fading text overlay, an image and a
+shape on the 320x180 test video, and above 30 dB on CI's FFmpeg 8.0 (Linux, Windows) and 9.0 (macOS). The clean fixture is untagged; the
+programme reads it as BT.709 (ffmpeg-skill labels an untagged source so), so the test labels it the same way (`color --retag bt709`, a
+stream copy) before compositing, as a delivered clean programme is tagged. The residue is at anti-aliased edges and semi-transparent plates: the burn draws onto 4:2:0 in one pass, the layer is
 drawn at 4:4:4 against a transparent black and converted to 4:2:0 when composited, and the two programmes are separate H.264 encodes.
 
 **Not here.** One layer for the whole graphics track (the programme minus the video) is not offered: per element is what an NLE rebuild
@@ -967,7 +977,8 @@ needs, and their stack is the same picture. A `rendered_layer` still refuses a V
 question from writing vp9 layers here.
 
 **Consumers.** New top-level `layer_export` block, `response.conditional.layer_export`, `request.shape.options?.layer_export?`, the alpha
-flags in `ffmpeg_skill.flags_used` (graphics, overlay), and `execution.executables` naming background's second use. No element type,
+flags in `ffmpeg_skill.flags_used` (graphics, overlay), `ffmpeg-skill/color` among `dependencies[0].tools` / `delegates_to`, and
+`execution.executables` naming background's second use and color.py --retag. No element type,
 parameter, `animations`, `provenance` or `colors` entry changes. `response` and `execution` are fatal drift keys for the agent's pin
 until it re-pins; `check_contract()` is unaffected.
 
@@ -976,4 +987,5 @@ every layer `verified` with its `alpha` step, the manifest (ids, types, times, e
 sha256), that the shape's layer is transparent before its window and around the rectangle and opaque navy on it, then composites the
 layers over the clean video with ffmpeg-skill/overlay and measures the PSNR against the burned programme; a second run reuses the canvas;
 a qtrle / premultiplied layer is written and reported as such; an existing layer without overwrite is refused before rendering. On a
-checkout without the flags the same tests assert the up-front refusal. Run against ffmpeg-skill 3.2.3 (main), 3.0.0 and 0.12.5.
+checkout without the flags the same tests assert the up-front refusal. Every layer is checked to carry the BT.709 tags. Run against
+ffmpeg-skill 3.2.3 (main), 3.0.0 and 0.12.5.

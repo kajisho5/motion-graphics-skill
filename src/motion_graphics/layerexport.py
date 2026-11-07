@@ -2,7 +2,8 @@
 
     "options": {"layer_export": {"directory": "layers", "alpha_codec?": "prores4444", "alpha_mode?": "straight"}}
 
-One transparent canvas the size, rate and length of the source video is made once (ffmpeg-skill/background --transparent), and
+One transparent canvas the size, rate and length of the source video is made once (ffmpeg-skill/background --transparent, then
+color --retag with the programme's colour tags, which every layer drawn on it keeps), and
 each element is drawn on it by the same ffmpeg-skill call that burns it into the programme, with `--keep-alpha`: the same
 template, text, position, margin, timing and fade, so a layer placed at 0 s over the clean video gives the burned picture back.
 One file per element (`<element id>.<ext>`) and a `manifest.json` (element id, type, start, end, box, file, sha256, the alpha

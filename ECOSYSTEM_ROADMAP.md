@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.2.16, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11), per-element transparent layer export (step 8). 659 tests, CI on 3 OSes.
+0.2.16, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11), per-element transparent layer export (step 8). 667 tests, CI on 3 OSes.
 
 ## What this repository owns
 
