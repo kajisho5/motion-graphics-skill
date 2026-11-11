@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.18 — 2026-11-11
+
+- ci: stop running tests twice per pull request commit (#44) (c14359c)
+
 ## v0.2.17 — 2026-11-07
 
 - Export each element alone on a transparent layer, with a manifest (roadmap step 8) (#43) (a03a4dd)
