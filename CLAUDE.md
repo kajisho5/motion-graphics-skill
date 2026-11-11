@@ -38,6 +38,9 @@ additive; see "Known limitations" for when a version bump would actually be requ
 - **Release automation is live** (`.github/workflows/release.yml`, one job on every push to `main`: version, `pyproject.toml`,
   `CHANGELOG.md`, tag, GitHub Release, optional PyPI). Do not hand-edit `CHANGELOG.md` or the version. The autolabeler never assigns
   `major`/`breaking` from PR text, on purpose (a PR body that merely quotes "BREAKING CHANGE" made ffmpeg-skill publish 1.0.0-1.0.2 with no breaking change); a human applies that label when a major release is really meant.
+  Dependabot applies `major` on its own when a *dependency* moved a major version, so before release-drafter runs,
+  `.github/scripts/dependabot_release_labels.py` removes `major`/`breaking`/`minor`/`feature`/`enhancement` from Dependabot PRs
+  unless a person applied the label (`tests/test_release_labels.py`).
 - **`video-production-agent`** (`kajisho5/video-production-agent`, the downstream consumer) pins `contract_0.1.0.json` and gates on
   `check_contract()` (hard) / `contract_drift()` (informational). Re-verified for ADR-19: `check_contract()` returns `[]`, and the
   drift gains exactly `element_types hook/meme/sticker: installed but not pinned`. Its `tests/test_adapter_motion_graphics.py` has two
