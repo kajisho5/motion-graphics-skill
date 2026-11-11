@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.19 — 2026-11-11
+
+- fix(release): Dependabot labels cannot raise the release level (#45) (03e1b70)
+
 ## v0.2.18 — 2026-11-11
 
 - ci: stop running tests twice per pull request commit (#44) (c14359c)
