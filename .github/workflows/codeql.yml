@@ -9,6 +9,12 @@ on:
     # Mondays 04:23 UTC -- an off-the-hour time, not a coordinated pattern that spikes GitHub's schedulers.
     - cron: '23 4 * * 1'
 
+concurrency:
+  # a newer commit on a pull request cancels the runs of the commit it replaces; every other run (main, tags,
+  # schedule, manual) has its own group and is never cancelled
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
