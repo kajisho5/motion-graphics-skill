@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.2.16, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11), per-element transparent layer export (step 8). 667 tests, CI on 3 OSes.
+0.2.19, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11), per-element transparent layer export (step 8). CI on 3 OSes.
 
 ## What this repository owns
 
@@ -13,11 +13,13 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 | Owned job | Status | Note |
 |---|---|---|
-| タイトル・テロップ | done |  |
+| タイトル・テロップ | done | titles burned into a programme; title and stinger material files are hyperframes-skill's |
+| ロゴ・PiP・クロマキー合成 | done | added by the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O10): `logo`, `image_overlay` as a graphic, `video_overlay` with `chromakey` (ADR-15). Plain still compositing as part of an edit stays video-editing-skill's `静止画オーバーレイ` |
+| 動くグラフィックの配置 | done | added by the same decisions (O1, O10): `rendered_layer` (step 7, ADR-25) is the animated-overlay path; recorded as such in step 12 |
 
 ## Wiring
 
-Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 contract (video-production-agent#82, ADR-064), and `shape` (video-production-agent#93). Delegates to ffmpeg-skill probe, graphics, overlay, and background for `shape` (ADR-22, docs/ffmpeg-skill.md).
+Agent wires all 12 elements with every parameter, first from a pinned 0.2.8 contract (video-production-agent#82, ADR-064), and `shape` (video-production-agent#93); the agent's pin is 0.2.19 today. `motion.image`, `motion.logo`, `motion.video` and `motion.layer` reach `motion-graphics/run`. Delegates to ffmpeg-skill probe, graphics, overlay, and background for `shape` (ADR-22, docs/ffmpeg-skill.md).
 
 ## Steps
 
@@ -56,10 +58,19 @@ Agent wires all 12 elements with every parameter, read from its pinned 0.2.8 con
   - なぜ要るか：ブランドごとの配色・書体・ロゴ・余白を毎回並べずに、テーマを切り替えるだけで全テロップに反映できる
   - Done when: two themes render the same template, and each element's colours and fonts match its theme, checked on the pixels / metadata; a low-contrast theme warns
   - Done (ADR-29): `options.themes` / `options.theme`, the `logo` element type, the theme font on every graphics template, the contrast report (`response.theme.contrast`, `theme-check`); `tests/test_themes.py` renders one document with two themes and reads each element's colours from the pixels and its font from ffmpeg-skill's report, and a low-contrast theme warns
+- [ ] **12. `rendered_layer` is the animated-overlay path** — under the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O1), animated overlays are made by hyperframes-skill (segments, alpha) and placed here by `rendered_layer`; typed keyframes on ffmpeg-skill overlay ([ffmpeg-skill#425](https://github.com/kajisho5/ffmpeg-skill/issues/425)) are not needed for it. Say so where a caller looks: SKILL.md, the contract's `unsupported_animations` text (a refused `slide` / `move` / `scale` / `opacity_keyframes` names `rendered_layer` as the way), and docs/decisions.md. `rendered_layer` also reads the material's `title.json` (the Velisa spec for title metadata, hyperframes-skill step 17) for `in_duration` / `out_duration` / `loop` and the alpha mode when the caller gives the file instead of the numbers; values the caller states win
+  - Why: one path for moving graphics, so nobody waits for engine keyframes or builds a second one（なぜ要るか：動くテロップの経路を一つに決め、二重実装を避ける）
+  - Done when: a refused `slide` animation's error names `rendered_layer`; a hyperframes-skill lower third (ProRes 4444, `--segments`) placed from its `title.json` alone shows the in, the looped middle and the out at the same frames as with the numbers given by hand
+- [ ] **13. Record the overlay boundary (logo / PiP / chroma key)** — write down, in docs/decisions.md and SKILL.md, what the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O10) settled: logos, images as graphics (fade, theme, safe zones), PiP and chroma key, and the placement of moving graphics are this skill's; plain still compositing at a named position as part of an edit is video-editing-skill's `OVERLAY`; ffmpeg-skill is the engine under both (its `Bロール合成` is the cut-away, not PiP). No contract change
+  - Why: the agent and a person choosing between `edit.overlay` and `motion.image` read the same rule（なぜ要るか：静止画の重ね方の使い分けを一か所に書く）
+  - Done when: the decision is in docs/decisions.md with the decision linked, and SKILL.md's overlay section points to it
+- [ ] **14. Brand kit reader (`kit@1`)** — `options.kit` takes a brand kit in the Velisa `kit@1` shape (a superset of ffmpeg-skill `brand.json`) and maps it onto `theme@1` and `brand_kit` by the mapping table in the Velisa spec; the mapped theme is written in the response. Explicit values > kit > preset, as today for themes. A kit key with no `theme@1` counterpart is reported, not dropped silently. [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O5)
+  - Why: one brand file drives this skill and the other renderers alike（なぜ要るか：同じブランドファイルを全レンダラーで共有できる）
+  - Done when: a `kit@1` fixture and the equivalent `theme@1` render the same document to the same pixels; the contrast report runs on the kit's colours
 
 ## Boundaries
 
-video_overlay (PiP) overlaps ffmpeg-skill's Bロール・画面合成; titles also exist in hyperframes / remotion templates and ffmpeg-skill graphics. ecosystem.json keeps タイトル・テロップ here.
+Under the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156): burned-in titles (`タイトル・テロップ`) are here; title and stinger material files are hyperframes-skill's; remotion-ffmpeg-skill's titles stay inside its compositions (O9). Logos, PiP, chroma key and the placement of moving graphics are here; plain still compositing in an edit is video-editing-skill's; ffmpeg-skill is the engine (O10). Animated overlays are hyperframes-skill material placed by `rendered_layer` (O1).
 
 ---
 Engine for every media operation: [ffmpeg-skill](https://github.com/kajisho5/ffmpeg-skill) (3.x, 42 tools, contract_version 2.0; treated as complete, proposals go to Velisa's ROADMAP). Orchestrator: [video-production-agent](https://github.com/kajisho5/video-production-agent).
