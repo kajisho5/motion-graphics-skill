@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.20 — 2026-11-12
+
+- docs(roadmap): rendered_layer as the animated-overlay path, logo/PiP/chroma key, kit@1 reader (#46) (467dfd2)
+
 ## v0.2.19 — 2026-11-11
 
 - fix(release): Dependabot labels cannot raise the release level (#45) (03e1b70)
