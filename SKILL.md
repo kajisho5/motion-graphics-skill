@@ -22,6 +22,13 @@ or gradient), or accept a
 raw ffmpeg filter/command/argv/shell/env — those field names are rejected wherever they appear in the request,
 recursively (`INVALID_REQUEST`). All of that is `video-production-agent`'s job, not this Skill's.
 
+## Overlays: this Skill or video-editing-skill
+
+Logos, images treated as graphics (fade, theme, safe zones), picture-in-picture, chroma key and the placement of moving
+graphics are this Skill's (`image_overlay`, `logo`, `video_overlay`, `rendered_layer`). Plain still compositing at a named
+position as part of an edit is video-editing-skill's `OVERLAY`. ffmpeg-skill is the engine under both; its B-roll cut-away is
+not PiP. See docs/decisions.md ADR-32.
+
 ## Workflow
 
 ```bash

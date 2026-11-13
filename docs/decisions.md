@@ -1030,3 +1030,22 @@ maps onto the hand-written equivalent `theme@1` and reports the ten keys with no
 third, a title, the logo) to the same decoded frames (md5 of the rgb24 frames), and the contrast report is the same, on the kit's colours.
 A plain `brand.json` without `secondary` maps onto `brand_kit`, and a low-contrast one warns on its own colours. Run against
 ffmpeg-skill 3.8.3 (main).
+
+## ADR-32: the overlay boundary: logos, PiP, chroma key and moving graphics are placed here; plain still compositing in an edit is video-editing-skill's
+
+**Context.** Three repositories composite one picture over another: this skill (`image_overlay`, `logo`, `video_overlay`,
+`rendered_layer`), video-editing-skill (`OVERLAY`) and ffmpeg-skill (`overlay`, `broll`). The jobs were split by name only, and
+PiP and chroma key had no stated owner although `video_overlay` does them (ADR-15). The
+[Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O10; Velisa `docs/ecosystem/DECISION_LOG.md`
+D21) settled it.
+
+**Decision.**
+- This skill owns `ロゴ・PiP・クロマキー合成` and `動くグラフィックの配置`: logos, images treated as graphics (fade, theme, safe
+  zones), picture-in-picture, chroma key, and the placement of moving graphics (`image_overlay`, `logo`, `video_overlay`,
+  `rendered_layer`).
+- Plain still compositing at a named position as part of an edit is video-editing-skill's `OVERLAY` (`静止画オーバーレイ`).
+- ffmpeg-skill is the engine under both. Its `Bロール合成` is the cut-away, not PiP.
+- The wiring is unchanged. A caller choosing between video-editing-skill's `OVERLAY` (the agent's `edit.overlay`) and this skill
+  (`motion.image`) reads this rule.
+
+**Versioning.** Documentation only; no contract change.
