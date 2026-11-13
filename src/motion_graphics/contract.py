@@ -15,6 +15,7 @@ from .executor import DURATION_TOLERANCE, IMAGE_EXTENSIONS, WORK_DIR_NAME
 from .fonts import ALLOWED_FONT_EXTENSIONS, DEFAULT_FONT_ID, FONT_REGISTRY
 from .styles import contract_section as style_presets_section
 from .regions import contract_section as reserved_regions_section
+from .kit import contract_section as kit_section
 from .themes import contract_section as themes_section
 from .layerexport import contract_section as layer_export_section
 from .textfit import contract_section as text_fit_section
@@ -150,6 +151,8 @@ def skill_contract() -> Dict[str, Any]:
         "reserved_regions": reserved_regions_section(),
         # ADR-29: brand themes -- colours, font, logo and spacing from one file, switchable
         "themes": themes_section(),
+        # ADR-31: a Velisa kit@1 / ffmpeg-skill brand.json file, mapped onto a theme or the brand_kit roles
+        "kit": kit_section(),
         # ADR-30: every element also written alone on a transparent picture, one file each, with a manifest
         "layer_export": layer_export_section(),
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
@@ -192,6 +195,7 @@ def skill_contract() -> Dict[str, Any]:
                               "options?": {"reuse_intermediates?": True, "crf?": 18, "preset?": "medium", "audio_stream?": 0, "platform?": "tiktok",
                                            "style?": "news", "reserved_regions?": {"end_screen?": {"duration?": 20}, "cards?": [{"time": 30}], "on_overlap?": "report"},
                                            "themes?": {"brand_a": "themes/brand_a.json"}, "theme?": "brand_a", "brand_kit?": {"primary?": "RRGGBB", "secondary?": "RRGGBB", "background?": "RRGGBB", "text?": "RRGGBB"},
+                                           "kit?": "brand/kit.json",
                                            "layer_export?": {"directory": "layers", "alpha_codec?": "prores4444", "alpha_mode?": "straight"}},
                               "elements[].style?": "a style_presets name",
                               "elements[].fit?": {"width": 600, "max_lines?": 2, "min_scale?": 0.6, "profile?": "ja-kinsoku", "lang?": "ja"}}},

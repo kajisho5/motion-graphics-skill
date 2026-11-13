@@ -209,6 +209,16 @@ ffmpeg-skill `--font` / `--font-file`), the `logo` element draws the theme's log
 Colour pairs with too little contrast are warned (`response.theme.contrast`); `motion-graphics theme-check theme.json --json`
 checks a file alone. See ADR-29.
 
+### Brand kit (`kit@1`)
+
+`options.kit` takes a brand kit file in the Velisa `kit@1` shape, a superset of ffmpeg-skill `brand.json` (a plain `brand.json`
+is read the same way). It is converted by the spec's mapping table: the four colour roles, `font_file`, `logo`, `logo_position`,
+`logo_scale`, `logo_opacity`, `safe_margin` and `name` become a `theme@1`, applied as a theme is; a kit without all four colour
+roles becomes `options.brand_kit` with the roles it has. Only what the kit states is passed on. Every other key (`font` as a
+family name, `colors.outline` / `accent`, `lang`, `caption`, `loudness`, `fonts`, `logo_variants`, ...) is listed with its reason
+in `response.kit.unmapped` and as a warning. The mapped theme is in `response.kit.theme`, its contrast in `response.theme.contrast`.
+An explicit parameter > the kit > `options.style`. See ADR-31.
+
 ## Platform safe zones
 
 `options.platform` (`broadcast`, `facebook`, `instagram`, `linkedin`, `podcast`, `reels`, `shorts`, `tiktok`, `twitter`,

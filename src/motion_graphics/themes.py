@@ -61,9 +61,9 @@ def contrast_ratio(a: str, b: str) -> float:
     return (la + 0.05) / (lb + 0.05)
 
 
-def contrast_report(colors: Dict[str, str]) -> List[Dict[str, Any]]:
+def contrast_report(colors: Dict[str, str], pairs: tuple = CONTRAST_PAIRS) -> List[Dict[str, Any]]:
     out = []
-    for fg, bg, minimum, what in CONTRAST_PAIRS:
+    for fg, bg, minimum, what in pairs:
         a, b = colors.get(fg, fg), colors.get(bg, bg)
         ratio = round(contrast_ratio(a, b), 2)
         out.append({"foreground": fg, "background": bg if bg in colors else f"template plate {bg}", "colors": [a, b], "ratio": ratio,
@@ -176,8 +176,13 @@ def load_theme(policy: Any, path_text: str, where: str) -> Dict[str, Any]:
     from .canonical import sha256_file
     path = policy.resolve_input(path_text, where)
     theme = parse_theme(read_theme_document(path, where), where)
-    base = path.parent
+    resolve_theme_paths(policy, theme, path.parent, where)
+    theme["file"] = {"sha256": sha256_file(str(path)), "size": path.stat().st_size}
+    return theme
 
+
+def resolve_theme_paths(policy: Any, theme: Dict[str, Any], base: Path, where: str) -> None:
+    """A parsed theme's font_file and logo path, relative to `base` (the file they were read from), made PathPolicy-checked absolute paths."""
     def rel(p: str, what: str) -> str:
         q = Path(p)
         return str(policy.resolve_input(str(q if q.is_absolute() else base / q), what))
@@ -186,8 +191,6 @@ def load_theme(policy: Any, path_text: str, where: str) -> Dict[str, Any]:
         theme["font"] = {"font_file": rel(theme["font"]["font_file"], f"{where}.font.font_file")}
     if theme["logo"]:
         theme["logo"]["path"] = rel(theme["logo"]["path"], f"{where}.logo.path")
-    theme["file"] = {"sha256": sha256_file(str(path)), "size": path.stat().st_size}
-    return theme
 
 
 def warnings_for(theme: Dict[str, Any]) -> List[str]:

@@ -27,6 +27,7 @@ from .layerexport import ALPHA_CODECS, MANIFEST_NAME, alpha_step, layer_file_nam
 from .layers import has_alpha, layer_placements, place_args
 from .regions import element_boxes, overlaps, resolve_regions
 from .textfit import fit as fit_text
+from .kit import load_kit, warnings_for_kit
 from .themes import load_theme, warnings_for
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
 from .security import PathPolicy
@@ -125,6 +126,17 @@ class Executor:
             theme = load_theme(self.policy, opts["themes"][opts["theme"]], f"document.options.themes.{opts['theme']}")
             theme["label"] = opts["theme"]
             doc = parse_request(document, theme)
+        kit_record: Optional[Dict[str, Any]] = None
+        if doc.options.get("kit"):
+            # ADR-31: a kit@1 / brand.json file, converted by the Velisa mapping table onto a theme (all four colour roles) or the
+            # brand_kit roles, then applied as that input is
+            kit_record, theme = load_kit(self.policy, doc.options["kit"])
+            if theme is not None:
+                theme["label"] = "kit"
+                doc = parse_request(document, theme)
+            else:
+                doc = parse_request(document, None, kit_record["brand_kit"])
+        extra_warnings = (warnings_for(theme) if theme else []) + (warnings_for_kit(kit_record) if kit_record else [])
         video_path = self.policy.resolve_input(doc.video_path, "video")
         output_path = self.policy.resolve_write_path(doc.output_path, "output")
         if output_path == video_path:
@@ -175,7 +187,7 @@ class Executor:
             if el.type == "logo":
                 if theme is None or not theme.get("logo"):
                     raise MotionGraphicsError("INVALID_REQUEST", f"elements[{el.element_id}]: a logo element draws the active theme's logo, and "
-                                              + ("no theme is set (options.themes / options.theme)" if theme is None else f"theme {theme['label']!r} has no logo"),
+                                              + ("no theme is set (options.themes / options.theme, or an options.kit with all four colour roles and a logo)" if theme is None else f"theme {theme['label']!r} has no logo"),
                                               {"element_id": el.element_id, "reason": "theme_without_logo"})
                 logo_path = Path(theme["logo"]["path"])
                 if logo_path.suffix.lower() not in IMAGE_EXTENSIONS:
@@ -230,9 +242,10 @@ class Executor:
                              "output": {"path": str(output_path)}, "timeline": timeline},
                     **({"reserved_regions": reserved} if reserved else {}),
                     **({"theme": self._theme_record(theme)} if theme else {}),
+                    **({"kit": kit_record} if kit_record else {}),
                     **({"layer_export": self._layer_plan(doc, ordered, layer_paths, resolved_assets, fits, width, height, duration, fps, video)}
                        if layer_paths is not None else {}),
-                    "warnings": (warnings_for(theme) if theme else []) + self._region_warnings(reserved)}
+                    "warnings": extra_warnings + self._region_warnings(reserved)}
 
         # A single-element document never has a non-final stage, so it never needs (or creates) the cache
         # directory at all -- it renders straight into the requested output (ADR-5, docs/decisions.md).
@@ -315,7 +328,7 @@ class Executor:
                                         run.seconds, run.commands, run.dropped_non_av_streams, derived, _font_used(run.data)))
             stage_input, prev_identity, prev_duration = str(target), identity, artifact_meta["duration"]
 
-        warnings: List[str] = (warnings_for(theme) if theme else []) + self._region_warnings(reserved)
+        warnings: List[str] = extra_warnings + self._region_warnings(reserved)
         for eid, f in fits.items():
             if not f["fits"]:
                 warnings.append(f"elements[{eid}]: the text needs more than fit.max_lines lines even at the smallest scale ({f['scale']:g}); "
@@ -354,6 +367,7 @@ class Executor:
             },
             **({"reserved_regions": reserved} if reserved else {}),
             **({"theme": self._theme_record(theme)} if theme else {}),
+            **({"kit": kit_record} if kit_record else {}),
             **({"layer_export": layer_result} if layer_result is not None else {}),
             "warnings": warnings,
         }

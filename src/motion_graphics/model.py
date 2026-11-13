@@ -730,9 +730,11 @@ def _element(value: Any, index: int, platform_set: bool = False, default_style: 
     return GraphicsElement(element_id, etype, start, end, parameters, animation, style_info, fit)
 
 
-def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> GraphicsDocument:
+def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None, kit_colors: Optional[Dict[str, str]] = None) -> GraphicsDocument:
     """`theme` is the loaded active theme (themes.load_theme, done by the executor, which may read files); without it a document
-    that names themes is checked structurally and no theme is applied (`validate` touches no files)."""
+    that names themes is checked structurally and no theme is applied (`validate` touches no files). A kit (options.kit, ADR-31) is
+    loaded by the executor too and arrives here as the theme it maps onto, or as `kit_colors` (the brand_kit roles) when it has
+    fewer than four colour roles."""
     _reject_forbidden(document, "document")
     top = _obj(document, "document", ("schema", "video", "output", "elements", "options"), ("video", "output", "elements"))
     if "schema" in top and top["schema"] != REQUEST_SCHEMA_ID:
@@ -763,11 +765,20 @@ def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> Grap
         if theme_options is not None and (options_peek.get("style") is not None or options_peek.get("brand_kit") is not None):
             raise MotionGraphicsError("INVALID_REQUEST", "document.options: a theme gives the colours and the base style; do not combine it with "
                                       "options.style or options.brand_kit", {"field": "document.options.theme"})
+        if options_peek.get("kit") is not None:
+            from .kit import parse_kit_option
+            parse_kit_option(options_peek["kit"])
+            if theme_options is not None or options_peek.get("brand_kit") is not None:
+                raise MotionGraphicsError("INVALID_REQUEST", "document.options.kit gives the colours (and the theme): do not combine it with "
+                                          "options.themes / options.theme or options.brand_kit", {"field": "document.options.kit"})
         if options_peek.get("style") is not None:
             default_style = style_name(options_peek["style"], "document.options.style")
         if options_peek.get("brand_kit") is not None:
             brand_kit = parse_brand_kit(options_peek["brand_kit"])
-    if theme is not None:
+    kit_set = isinstance(options_peek, dict) and options_peek.get("kit") is not None
+    if kit_colors is not None:
+        brand_kit = dict(kit_colors)
+    if theme is not None and not kit_set:
         default_style = theme.get("base_style")
     elements = [_element(e, i, platform_set, default_style, brand_kit, theme) for i, e in enumerate(raw_elements)]
     seen: Dict[str, int] = {}
@@ -779,7 +790,7 @@ def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> Grap
 
     options_raw = top.get("options", {})
     options = _obj(options_raw, "document.options", ("reuse_intermediates", "crf", "preset", "audio_stream", "platform", "style", "brand_kit",
-                                                         "reserved_regions", "themes", "theme", "layer_export"), ())
+                                                         "reserved_regions", "themes", "theme", "layer_export", "kit"), ())
     reuse = options.get("reuse_intermediates", True)
     if not isinstance(reuse, bool):
         raise MotionGraphicsError("INVALID_REQUEST", "document.options.reuse_intermediates must be a boolean", {"field": "document.options.reuse_intermediates"})
@@ -821,4 +832,4 @@ def parse_request(document: Any, theme: Optional[Dict[str, Any]] = None) -> Grap
     return GraphicsDocument(video_path, output_path, overwrite, tuple(elements),
                              {"reuse_intermediates": reuse, "crf": crf, "preset": preset, "audio_stream": audio_stream, "platform": platform,
                               "style": default_style, "brand_kit": brand_kit, "reserved_regions": reserved, "themes": theme_options,
-                              "layer_export": layer_export})
+                              "layer_export": layer_export, "kit": options.get("kit")})
