@@ -17,6 +17,7 @@ from .styles import contract_section as style_presets_section
 from .regions import contract_section as reserved_regions_section
 from .kit import contract_section as kit_section
 from .themes import contract_section as themes_section
+from .titlejson import contract_section as title_json_section
 from .layerexport import contract_section as layer_export_section
 from .textfit import contract_section as text_fit_section
 from .model import (ANIMATION_KINDS, ELEMENT_TYPES, FIT_FIELDS, FORBIDDEN_KEYS, ID_RE, MAX_DURATION, MAX_ELEMENTS, PLATFORM_NAMES, POSITION_NAMES,
@@ -153,6 +154,8 @@ def skill_contract() -> Dict[str, Any]:
         "themes": themes_section(),
         # ADR-31: a Velisa kit@1 / ffmpeg-skill brand.json file, mapped onto a theme or the brand_kit roles
         "kit": kit_section(),
+        # ADR-33: a rendered_layer's title.json (velisa/title@1) fills its in / out / loop
+        "title_json": title_json_section(),
         # ADR-30: every element also written alone on a transparent picture, one file each, with a manifest
         "layer_export": layer_export_section(),
         "positions": {"named": list(POSITION_NAMES), "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"},
