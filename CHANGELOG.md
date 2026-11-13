@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1 — 2026-11-13
+
+- docs: record the overlay boundary (ADR-32, roadmap step 13) (#48) (566b839)
+
 ## v0.3.0 — 2026-11-13
 
 - Implement kit@1 brand kit reader (options.kit) (#47) (7b9dba0)
