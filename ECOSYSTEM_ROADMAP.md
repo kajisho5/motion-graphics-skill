@@ -5,7 +5,7 @@ Written from a read-only audit of this repository on 2026-10-30. Each step below
 
 ## Where it stands
 
-0.2.19, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11), per-element transparent layer export (step 8). CI on 3 OSes.
+0.2.19, version single-sourced (step 1). 15 element types: title, lower_third, text/image/video overlay, bug, chapter, progress, countdown, sticker, hook, meme, `shape` ([#33](https://github.com/kajisho5/motion-graphics-skill/pull/33)), `rendered_layer` (step 7) and `logo` (step 11). Style presets and brand kit (step 6), text fit and CSV lower thirds (step 9), YouTube reserved regions (step 10), brand themes (step 11), the `kit@1` brand kit reader (step 14), per-element transparent layer export (step 8). CI on 3 OSes.
 
 ## What this repository owns
 
@@ -64,9 +64,10 @@ Agent wires all 12 elements with every parameter, first from a pinned 0.2.8 cont
 - [ ] **13. Record the overlay boundary (logo / PiP / chroma key)** — write down, in docs/decisions.md and SKILL.md, what the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O10) settled: logos, images as graphics (fade, theme, safe zones), PiP and chroma key, and the placement of moving graphics are this skill's; plain still compositing at a named position as part of an edit is video-editing-skill's `OVERLAY`; ffmpeg-skill is the engine under both (its `Bロール合成` is the cut-away, not PiP). No contract change
   - Why: the agent and a person choosing between `edit.overlay` and `motion.image` read the same rule（なぜ要るか：静止画の重ね方の使い分けを一か所に書く）
   - Done when: the decision is in docs/decisions.md with the decision linked, and SKILL.md's overlay section points to it
-- [ ] **14. Brand kit reader (`kit@1`)** — `options.kit` takes a brand kit in the Velisa `kit@1` shape (a superset of ffmpeg-skill `brand.json`) and maps it onto `theme@1` and `brand_kit` by the mapping table in the Velisa spec; the mapped theme is written in the response. Explicit values > kit > preset, as today for themes. A kit key with no `theme@1` counterpart is reported, not dropped silently. [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O5)
+- [x] **14. Brand kit reader (`kit@1`)** — `options.kit` takes a brand kit in the Velisa `kit@1` shape (a superset of ffmpeg-skill `brand.json`) and maps it onto `theme@1` and `brand_kit` by the mapping table in the Velisa spec; the mapped theme is written in the response. Explicit values > kit > preset, as today for themes. A kit key with no `theme@1` counterpart is reported, not dropped silently. [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O5)
   - Why: one brand file drives this skill and the other renderers alike（なぜ要るか：同じブランドファイルを全レンダラーで共有できる）
   - Done when: a `kit@1` fixture and the equivalent `theme@1` render the same document to the same pixels; the contrast report runs on the kit's colours
+  - Done ([#47](https://github.com/kajisho5/motion-graphics-skill/pull/47), ADR-31): `options.kit` (a kit@1 or plain brand.json file) maps onto `theme@1` with all four colour roles, else onto `brand_kit` with the roles it has; only what the kit states is passed on, and every key with no counterpart is listed in `response.kit.unmapped` with the reason and warned; the mapped theme is `response.kit.theme`. `tests/test_kit.py` renders `tests/fixtures/kit_lagoon.json` and the equivalent `theme@1` to the same decoded frames with the same contrast report on the kit's colours
 
 ## Boundaries
 
