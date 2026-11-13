@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0 — 2026-11-13
+
+- Implement kit@1 brand kit reader (options.kit) (#47) (7b9dba0)
+
 ## v0.2.20 — 2026-11-12
 
 - docs(roadmap): rendered_layer as the animated-overlay path, logo/PiP/chroma key, kit@1 reader (#46) (467dfd2)
