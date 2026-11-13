@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.0 — 2026-11-13
+
+- rendered_layer reads the clip's title.json; a refused slide names rendered_layer (ADR-33, roadmap step 12) (#49) (7bb9190)
+
 ## v0.3.1 — 2026-11-13
 
 - docs: record the overlay boundary (ADR-32, roadmap step 13) (#48) (566b839)
