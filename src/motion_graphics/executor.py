@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -29,6 +29,7 @@ from .regions import element_boxes, overlaps, resolve_regions
 from .textfit import fit as fit_text
 from .kit import load_kit, warnings_for_kit
 from .themes import load_theme, warnings_for
+from .titlejson import resolve_title_json
 from .model import ELEMENT_TYPES, GraphicsElement, parse_request
 from .security import PathPolicy
 
@@ -164,7 +165,9 @@ class Executor:
         # resolve every asset/font referenced by any element up front: a missing asset must fail before anything renders
         resolved_assets: Dict[str, Dict[str, Any]] = {}
         resolved_fonts: Dict[str, ResolvedFont] = {}
-        for el in ordered:
+        title_records: Dict[str, Dict[str, Any]] = {}
+        ordered = list(ordered)
+        for idx, el in enumerate(ordered):
             if el.type == "image_overlay":
                 image_path = self.policy.resolve_input(el.parameters["image_path"], f"elements[{el.element_id}].parameters.image_path")
                 if image_path.suffix.lower() not in IMAGE_EXTENSIONS:
@@ -211,10 +214,21 @@ class Executor:
                                               f"(a VP9 alpha WebM decodes without its alpha here); an opaque clip is a video_overlay",
                                               {"element_id": el.element_id, "path": str(layer_path), "pix_fmt": lv.get("pix_fmt"), "reason": "layer_without_alpha"})
                 layer_duration = float(lv.get("duration") or layer_meta.get("duration") or lv.get("tagged_duration") or 0.0)
+                layer_sha256 = sha256_file(str(layer_path))
+                title_file: Optional[Dict[str, Any]] = None
+                if "title_json" in el.parameters:
+                    # ADR-33: the clip's title.json fills the in / out / loop the request left out (a stated value wins)
+                    params, title_records[el.element_id], tj_warnings = resolve_title_json(
+                        self.policy, el.element_id, el.parameters, layer_path, layer_sha256, layer_duration, float(lv.get("fps") or 0.0))
+                    el = replace(el, parameters=params)
+                    ordered[idx] = el
+                    extra_warnings = extra_warnings + tj_warnings
+                    title_file = title_records[el.element_id]["file"]
                 pieces, summary = layer_placements(el.start, el.end, layer_duration, el.parameters["in_duration"], el.parameters["out_duration"],
                                                    el.parameters["loop"], f"elements[{el.element_id}]")
-                resolved_assets[el.element_id] = {"path": str(layer_path), "sha256": sha256_file(str(layer_path)), "size": layer_path.stat().st_size,
-                                                  "pieces": pieces, "segments": summary, "dims": (int(lv.get("width") or 0), int(lv.get("height") or 0))}
+                resolved_assets[el.element_id] = {"path": str(layer_path), "sha256": layer_sha256, "size": layer_path.stat().st_size,
+                                                  "pieces": pieces, "segments": summary, "dims": (int(lv.get("width") or 0), int(lv.get("height") or 0)),
+                                                  **({"title_json": title_file} if title_file else {})}
             if el.type == "text_overlay" and el.parameters.get("font"):
                 resolved_fonts[el.element_id] = resolve_font(el.parameters["font"], self.policy)
             elif el.type == "text_overlay":
@@ -243,6 +257,7 @@ class Executor:
                     **({"reserved_regions": reserved} if reserved else {}),
                     **({"theme": self._theme_record(theme)} if theme else {}),
                     **({"kit": kit_record} if kit_record else {}),
+                    **({"title_json": title_records} if title_records else {}),
                     **({"layer_export": self._layer_plan(doc, ordered, layer_paths, resolved_assets, fits, width, height, duration, fps, video)}
                        if layer_paths is not None else {}),
                     "warnings": extra_warnings + self._region_warnings(reserved)}
@@ -368,6 +383,7 @@ class Executor:
             **({"reserved_regions": reserved} if reserved else {}),
             **({"theme": self._theme_record(theme)} if theme else {}),
             **({"kit": kit_record} if kit_record else {}),
+            **({"title_json": title_records} if title_records else {}),
             **({"layer_export": layer_result} if layer_result is not None else {}),
             "warnings": warnings,
         }
@@ -453,6 +469,8 @@ class Executor:
             params["video_path"] = {"sha256": asset["sha256"], "size": asset["size"]}
         if el.type == "logo" and asset is not None:
             params["logo"] = {"sha256": asset["sha256"], "size": asset["size"]}
+        if "title_json" in params and asset is not None and asset.get("title_json"):
+            params["title_json"] = dict(asset["title_json"])  # ADR-33: the file's content, not its path; the values it gave are in params
         if asset is not None and "segments" in asset:
             params["segments"] = asset["segments"]  # rendered_layer: where its pieces go (ADR-25), part of the identity
         if font is not None:

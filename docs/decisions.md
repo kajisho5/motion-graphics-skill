@@ -1049,3 +1049,47 @@ D21) settled it.
   (`motion.image`) reads this rule.
 
 **Versioning.** Documentation only; no contract change.
+
+## ADR-33: `rendered_layer` is the animated-overlay path; it reads the clip's `title.json`
+
+**Context.** Roadmap step 12. Under the [Velisa ownership decisions 2026-11-12](https://github.com/kajisho5/Velisa/pull/156) (O1),
+animated overlays are made by hyperframes-skill (one clip with alpha and IN / LOOP / OUT segments) and placed here by
+`rendered_layer` (ADR-25); typed keyframes on ffmpeg-skill overlay ([ffmpeg-skill#425](https://github.com/kajisho5/ffmpeg-skill/issues/425))
+are not needed for it. A caller still met two gaps: a refused `slide` did not say where to go instead, and the in / out / loop had
+to be copied by hand from the `title.json` hyperframes-skill writes beside the clip (`<stem>.title.json`, hyperframes-skill
+0.9.0, roadmap step 17), whose shape is the Velisa spec for title and stinger metadata (AI-video-production-OS
+`docs/specs/title-and-stinger.md`, `velisa/title@1`).
+
+**Decision.**
+- *The refusal names the way.* Every `unsupported_animations` reason (`slide`, `move`, `scale`, `opacity_keyframes`) ends with
+  "render the motion as a clip with alpha ... and place it with the rendered_layer element", and so does the refusal of an
+  animation on a template element when its kind is one of them. SKILL.md and the `rendered_layer` description say the same.
+- *`title_json`* is a new optional `rendered_layer` parameter (a path). `plan` and `run` read it (PathPolicy, at most 256 KiB,
+  UTF-8 JSON); `validate` touches no files and leaves the parameters it would fill out of the element.
+- *Mapping*, the spec's table: `segments.in` → `in_duration`, `segments.out` → `out_duration`, `segments.loop > 0` →
+  `loop: true` (0 → `false`). A value the request states wins (a warning when it differs); a value it leaves out comes from the
+  file, never the parameter's default. Nothing else in the file is used.
+- *The file must describe the clip.* Its `sha256`, when present, is the clip's (else `title_json_stale`); without it, its
+  `file`, when present, is the clip's name (else `title_json_other_file`); with neither, a warning. Its segments add up to the
+  clip's probed length within one frame (else `title_json_segments_mismatch`). `alpha`, when present, must be `straight`:
+  ffmpeg-skill/overlay composites straight alpha, so `premultiplied` is refused (`title_json_premultiplied_alpha`) rather than drawn
+  with dark fringes. A `schema` other than `velisa/title@1` (a `stinger.json`, say) is `not_title_json`. All `INVALID_INPUT`, before
+  anything renders.
+- *Identity.* The stage identity holds the values used and the sidecar's `{sha256, size}`, not its path, so the same clip placed
+  from its file and by hand renders the same pieces.
+- *Reporting.* `response.title_json {<element id>: {schema, file {sha256, size}, layer_matched_by, segments, alpha?, values,
+  sources}}` in plan and run.
+
+**Consumers.** Additive. A new optional parameter on `rendered_layer` (the pinned parameters are unchanged; video-production-agent
+reads a changed `parameters` block of a pinned element type as drift until it re-pins), new `unsupported_animations` reasons
+(informational drift there), and a new top-level `title_json` block. `response.conditional` is not extended (the agent treats
+`response` as fatal drift); `title_json.result` documents the key, as `kit.result` does for `response.kit` (ADR-31). The agent's
+`motion.layer` keeps passing the numbers; passing the file instead is its choice.
+
+**Verified.** `tests/test_title_json.py`: a refused `slide` / `move` / `scale` / `opacity_keyframes` names `rendered_layer`, on a
+text overlay and on a lower third. A lower third rendered as hyperframes-skill renders title material (ProRes 4444, 24 fps, 3 s, IN 12
+frames / LOOP 48 / OUT 12) with a `title.json` in the shape hyperframes-skill 0.9.0 writes (`lib/sidecar.mjs`) is placed for 6 s
+from the file alone and from the numbers by hand: the pieces are the same and every decoded frame is the same (md5 of the rgb24
+frames); the in is red, the two loop repeats and the cut third show the same phase, and the out is blue. The refusals each have a
+case. Run against ffmpeg-skill 3.8.3 (main). The clip was made with ffmpeg, not by hyperframes-skill itself: this machine has no
+headless Chromium for it.

@@ -326,7 +326,10 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
                        "at the element's start, out_duration seconds from its end finish at the element's end, and the part between them "
                        "(the loop) is repeated to fill the rest when loop is true, or played once and cut when false. The layer must "
                        "decode with alpha (a yuva/rgba pixel format: ProRes 4444, QuickTime Animation, PNG in MOV); a VP9 alpha WebM is "
-                       "refused because overlay decodes it without its alpha. No fade or other motion of its own: the animation is the clip's.",
+                       "refused because overlay decodes it without its alpha. No fade or other motion of its own: the animation is the clip's. "
+                       "This is the path for animated overlays (slide, move, scale, keyframed opacity): render them as such a clip. "
+                       "title_json names the clip's title.json (velisa/title@1, written by hyperframes-skill render beside the clip): its "
+                       "segments give in_duration / out_duration / loop, and a value the request states wins (see the contract's title_json).",
         "animation": "none",
         "parameters": {
             "video_path": {"type": _PATH, "required": True},
@@ -338,7 +341,11 @@ ELEMENT_TYPES: Dict[str, Dict[str, Any]] = {
             "in_duration": {"type": _NUM, "required": False, "min": 0.0, "max": 60.0, "default": 0.0},
             "out_duration": {"type": _NUM, "required": False, "min": 0.0, "max": 60.0, "default": 0.0},
             "loop": {"type": _BOOL, "required": False, "default": True},
+            # ADR-33: read at plan / run; with it, in_duration / out_duration / loop the request leaves out come from its segments
+            "title_json": {"type": _PATH, "required": False},
         },
+        # filled from title_json (ADR-33) instead of their defaults when the request gives title_json and leaves them out
+        "title_json_fills": ("in_duration", "out_duration", "loop"),
         "required_capabilities": ["ffmpeg-skill", "ffmpeg", "ffprobe", "filter:overlay", "filter:scale", "filter:colorchannelmixer", "encoder:libx264",
                                   "ffmpeg-skill-flag:overlay.place"],
     },
@@ -367,11 +374,17 @@ ANIMATION_KINDS: Dict[str, Dict[str, Any]] = {
 # built-in of the template (see ELEMENT_TYPES[...]["animation"] == "builtin_slide_fade"). Exposing a generic
 # "slide"/"move"/"scale" Animation would mean this skill inventing its own per-frame filter expression, which is
 # exactly the raw-filter authority STEP 5 / STEP 10 withhold from it.
+# ADR-33: each reason ends with the way to get that motion here: an animated overlay is rendered elsewhere (hyperframes-skill,
+# with IN / LOOP / OUT segments and alpha) and placed by the rendered_layer element. Keyframes on ffmpeg-skill/overlay are not
+# needed for it.
+RENDERED_LAYER_WAY = ("for animated graphics, render the motion as a clip with alpha (e.g. hyperframes-skill, ProRes 4444) and place "
+                      "it with the rendered_layer element (its title.json gives the in / loop / out)")
 UNSUPPORTED_ANIMATIONS: Dict[str, str] = {
-    "slide": "position animation is not exposed as a typed, per-element parameter by ffmpeg-skill/overlay; lower_third has a fixed, non-configurable built-in slide instead",
-    "move": "arbitrary position keyframes would require a per-frame expression, which this skill does not construct (no raw filters, STEP 10)",
-    "scale": "scale animation over time is not exposed as a typed parameter by ffmpeg-skill/overlay (static --scale / --scale-percent only)",
-    "opacity_keyframes": "arbitrary opacity keyframe curves are not supported; use a fade (2-point in/out/in_out) instead",
+    "slide": "position animation is not exposed as a typed, per-element parameter by ffmpeg-skill/overlay; lower_third has a fixed, non-configurable built-in slide instead; "
+             + RENDERED_LAYER_WAY,
+    "move": "arbitrary position keyframes would require a per-frame expression, which this skill does not construct (no raw filters, STEP 10); " + RENDERED_LAYER_WAY,
+    "scale": "scale animation over time is not exposed as a typed parameter by ffmpeg-skill/overlay (static --scale / --scale-percent only); " + RENDERED_LAYER_WAY,
+    "opacity_keyframes": "arbitrary opacity keyframe curves are not supported; use a fade (2-point in/out/in_out) instead, or " + RENDERED_LAYER_WAY,
 }
 
 
@@ -534,8 +547,10 @@ def _font(value: Any, where: str) -> Dict[str, Any]:
 def _animation(value: Any, element_type: str, where: str) -> Animation:
     spec = ELEMENT_TYPES[element_type]
     if spec.get("animation") != "configurable":
+        kind = value.get("kind") if isinstance(value, dict) else None
+        hint = f"; {RENDERED_LAYER_WAY}" if isinstance(kind, str) and kind in UNSUPPORTED_ANIMATIONS else ""
         raise MotionGraphicsError("UNSUPPORTED_OPERATION", f"{where}: element type {element_type!r} does not accept a configurable animation "
-                                   f"({spec.get('animation')} is built into the template and is not a request field)",
+                                   f"({spec.get('animation')} is built into the template and is not a request field){hint}",
                                    {"field": where, "element_type": element_type})
     obj = _obj(value, where, ("kind", "parameters"), ("kind", "parameters"))
     kind = obj["kind"]
@@ -669,7 +684,11 @@ def _element(value: Any, index: int, platform_set: bool = False, default_style: 
             style_info["applied"].pop("animation", None)
             style_info["skipped"] = ["animation"]
     parameters: Dict[str, Any] = {}
+    # ADR-33: with title_json the left-out segment parameters are read from the file at plan / run, not defaulted here
+    from_title_json = tuple(tspec.get("title_json_fills", ())) if "title_json" in praw else ()
     for name, spec in pspec.items():
+        if name not in praw and name in from_title_json:
+            continue
         if name not in praw:
             # With document.options.platform set, an omitted margin is the destination's safe zone (ffmpeg-skill's own
             # --platform behaviour, which only applies when no --margin is sent), not the 24px default -- so the default

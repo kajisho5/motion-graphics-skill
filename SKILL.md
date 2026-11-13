@@ -17,7 +17,7 @@ decided. Every field is typed and range-checked; there is no free-text "make it 
 
 Do not ask it to: choose what text or image to show, choose when something should appear, choose colors/fonts/
 layout for aesthetic reasons, animate anything beyond a linear `fade` (no slide/move/scale — see
-`unsupported_animations` in the contract), draw anything but a solid rectangle (`shape`: no rounded corners, border, rotation
+`unsupported_animations` in the contract; an animated overlay is a pre-rendered alpha clip placed by `rendered_layer`, below), draw anything but a solid rectangle (`shape`: no rounded corners, border, rotation
 or gradient), or accept a
 raw ffmpeg filter/command/argv/shell/env — those field names are rejected wherever they appear in the request,
 recursively (`INVALID_REQUEST`). All of that is `video-production-agent`'s job, not this Skill's.
@@ -28,6 +28,16 @@ Logos, images treated as graphics (fade, theme, safe zones), picture-in-picture,
 graphics are this Skill's (`image_overlay`, `logo`, `video_overlay`, `rendered_layer`). Plain still compositing at a named
 position as part of an edit is video-editing-skill's `OVERLAY`. ffmpeg-skill is the engine under both; its B-roll cut-away is
 not PiP. See docs/decisions.md ADR-32.
+
+## Animated overlays: `rendered_layer`
+
+Animated overlays (a lower third that slides in, a title that scales, keyframed opacity) are made by hyperframes-skill as one
+clip with alpha (ProRes 4444) and IN / LOOP / OUT segments, and placed here by `rendered_layer`. This Skill does not animate
+position or scale itself, and a refused `slide` / `move` / `scale` / `opacity_keyframes` says so. Give the clip as `video_path`
+and either its `title.json` (`title_json`, the file hyperframes-skill `render` writes beside it as `<stem>.title.json`) or the
+numbers (`in_duration`, `out_duration`, `loop`); a number the request states wins over the file. The file must describe that
+clip (its `sha256`, else its `file` name, and its segments adding up to the clip's length) and say `straight` alpha when it says
+any. What was read and from where is in `response.title_json`. See docs/decisions.md ADR-33.
 
 ## Workflow
 

@@ -262,6 +262,14 @@ A clip that does not decode with alpha is refused (`INVALID_INPUT`, `layer_witho
 whose alpha the overlay's decoder drops. A checkout without `--place` reports the type unsupported and refuses it before
 rendering. See ADR-25.
 
+`rendered_layer` is the path for animated overlays: render the motion as such a clip (hyperframes-skill) instead of asking
+for a `slide` / `move` / `scale` animation, which is refused with a message naming `rendered_layer`. With
+`"title_json": "lower-third.title.json"` (the `velisa/title@1` file hyperframes-skill writes beside the clip) the segments come
+from the file: `segments.in` is `in_duration`, `segments.out` is `out_duration`, `segments.loop > 0` is `loop: true`. A value
+the request states wins, with a warning when it differs. The file is refused (`INVALID_INPUT`) when its `sha256` or `file` names
+another clip, its segments do not add up to the clip's length within one frame, or its `alpha` is `premultiplied`. The plan and
+the run report `title_json.<element id>` (the values used and where each came from). See ADR-33.
+
 ## Layer export (each element alone on transparent)
 
 `options.layer_export: {"directory": "layers", "alpha_codec": "prores4444", "alpha_mode": "straight"}` also writes, beside the
