@@ -989,3 +989,44 @@ layers over the clean video with ffmpeg-skill/overlay and measures the PSNR agai
 a qtrle / premultiplied layer is written and reported as such; an existing layer without overwrite is refused before rendering. On a
 checkout without the flags the same tests assert the up-front refusal. Every layer is checked to carry the BT.709 tags. Run against
 ffmpeg-skill 3.2.3 (main), 3.0.0 and 0.12.5.
+
+## ADR-31: brand kit reader: `options.kit` maps a Velisa `kit@1` file onto `theme@1` or `brand_kit`
+
+**Context.** Roadmap step 14, under the Velisa ownership decisions of 2026-11-12 (O5): one brand file drives every renderer. The
+Velisa spec (`docs/specs/kit.md`, `velisa/kit@1`) is a superset of ffmpeg-skill `brand.json` and gives a mapping table onto this
+skill's two existing inputs. `theme@1` refuses unknown fields (`bad_theme`), so a kit is converted, not passed as a theme.
+
+**Decision.**
+- *Request:* `options.kit` is the kit file's path (PathPolicy, at most 256 KiB, UTF-8 JSON, the same reader as a theme file). It is
+  refused together with `options.themes` / `options.theme` / `options.brand_kit` (two brand inputs would compete). `options.style`
+  may go with it and is the preset under it: an explicit parameter > the kit > the preset. `validate` touches no files: it checks
+  the path structurally and applies nothing; `plan` and `run` read the file (`kit.load_kit`).
+- *Mapping* (`kit.map_kit`, exactly the spec's table): `colors.primary` / `secondary` / `background` / `text` → the four roles;
+  `font_file` → `font.font_file`; `logo` → `logo.path`; `logo_position` → `logo.position`; `logo_scale` → `logo.scale_width`;
+  `logo_opacity` → `logo.opacity`; `safe_margin` → `spacing.margin` and `logo.margin`; `name` → `name`. `colours` (the remotion
+  spelling) is read as `colors`. Relative paths stay relative to the kit file. The result is checked by `themes.parse_theme` like a
+  theme file and then applied as a theme is (ADR-29), labelled `kit`.
+- *Without all four roles* a theme cannot be made (the spec's rule): the kit becomes `options.brand_kit` with the roles it has, and
+  the theme-only keys (`name`, `font_file`, `logo*`, `safe_margin`) are reported unmapped. `colors.accent` is not used as
+  `secondary`; the spec leaves that a choice to state. A kit with none of the four roles is refused (`kit_without_colors`).
+- *Only what the kit states is passed on.* ffmpeg-skill's `brand.json` defaults (logo scale 160, opacity 0.9, margin 48, ...) are not
+  filled in; a key the kit leaves out stays out of the theme.
+- *Unmapped keys are reported, not dropped:* every key with no `theme@1` / `brand_kit` counterpart (`font` as a family name — the theme
+  takes `font_id` or `font_file` —, `colors.outline` / `accent`, `lang`, `styles`, `caption`, `loudness`, `fonts`, `logo_variants`,
+  `contrast`, a `name` that is not a short identifier, logo settings without a logo, and keys kit@1 does not define) is listed in
+  `response.kit.unmapped` with the reason, and each gives a warning. A value that maps but is out of range (a `logo_position` outside
+  the nine names, a `logo_scale` over 8192, ...) is refused (`INVALID_INPUT`, `bad_kit`) rather than left out.
+- *Reporting:* `response.kit {schema, file {sha256, size}, mapped_to, theme | brand_kit, unmapped, contrast?}` in plan and run; the
+  mapped `theme@1` document is written there as the mapping gave it. With a theme, `response.theme` carries the contrast report on the
+  kit's colours; with a brand kit, `response.kit.contrast` has the pairs whose two colours are known, and low pairs warn.
+
+**Consumers.** Additive: a new top-level `kit` block, an optional request field (`request.shape.options?.kit?`, which the agent
+reads as informational drift). `response.conditional` is not extended (the agent treats `response` as fatal drift); `kit.result`
+documents the key, as `themes.result` does for `response.theme`. The existing `theme@1` and `brand_kit` inputs are unchanged. Checked
+against video-production-agent `main`: `check_contract()` returns `[]` and its fatal drift is empty.
+
+**Verified.** `tests/test_kit.py`: the fixture `tests/fixtures/kit_lagoon.json` (every `brand.json` key and every kit@1 addition)
+maps onto the hand-written equivalent `theme@1` and reports the ten keys with no counterpart; both render the same document (a lower
+third, a title, the logo) to the same decoded frames (md5 of the rgb24 frames), and the contrast report is the same, on the kit's colours.
+A plain `brand.json` without `secondary` maps onto `brand_kit`, and a low-contrast one warns on its own colours. Run against
+ffmpeg-skill 3.8.3 (main).

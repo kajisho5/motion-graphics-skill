@@ -1,0 +1,19 @@
+{
+  "schema": "velisa/kit@1",
+  "name": "lagoon",
+  "font": "Brand Sans",
+  "font_file": "font.ttf",
+  "colors": {"primary": "34C759", "secondary": "5AC8FA", "background": "0B1A2A", "text": "66E0FF", "outline": "000000", "accent": "1E6F8E"},
+  "logo": "logo_b.png",
+  "logo_position": "top-right",
+  "logo_scale": 64,
+  "logo_opacity": 1.0,
+  "safe_margin": 40,
+  "lang": "en",
+  "styles": {"caption": {"font": "Brand Sans", "size": 30}},
+  "caption": {"size": 26, "position": "bottom"},
+  "loudness": {"lufs": -14, "tp": -1},
+  "fonts": [{"family": "Brand Sans", "file": "font.ttf", "licence": "OFL", "embedding": "allowed"}],
+  "logo_variants": {"mono": "logo_mono.png", "clear_space": 16},
+  "contrast": [{"fg": "66E0FF", "bg": "0B1A2A", "ratio": 11.9}]
+}
