@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.1 — 2026-11-19
+
+- ci: commit the contract as contract/contract.json (#50) (e92e664)
+
 ## v0.4.0 — 2026-11-13
 
 - rendered_layer reads the clip's title.json; a refused slide names rendered_layer (ADR-33, roadmap step 12) (#49) (7bb9190)
