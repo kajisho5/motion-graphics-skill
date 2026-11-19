@@ -121,7 +121,11 @@ jobs:
       # it is pushed. A failure stops the release; main and the tags stay as they were (Velisa ADR-023).
       - name: Test the release commit before pushing it
         if: steps.version.outputs.release != 'false'
+        env:
+          # the contract tests run the CLI, which needs an ffmpeg-skill checkout (CI's tests.yml uses its main too)
+          MOTION_GRAPHICS_FFMPEG_SKILL_DIR: ${{ runner.temp }}/ffmpeg-skill
         run: |
+          git clone -q --depth 1 https://github.com/kajisho5/ffmpeg-skill "$RUNNER_TEMP/ffmpeg-skill"
           python3 -m pip install -q -e . pytest
           python3 -m pytest -q tests/test_contract.py tests/test_contract_file.py tests/test_release_labels.py tests/test_version_source.py tests/test_release_gate.py
 
