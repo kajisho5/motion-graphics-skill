@@ -4,7 +4,7 @@
   "id": "motion-graphics",
   "name": "motion-graphics-skill",
   "package": "motion-graphics-skill",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "contract_version": 1,
   "kind": "execution",
   "role": "motion graphics rendering (execution); not design, not decision",
@@ -28,7 +28,7 @@
     {
       "tool_id": "motion-graphics/run",
       "skill_id": "motion-graphics",
-      "version": "0.4.3",
+      "version": "0.4.4",
       "role": "execution",
       "description": "Render a typed Graphics Document (titles, lower thirds, text overlays, image/logo overlays, video-on-video picture-in-picture/chroma-key overlays, solid-colour rectangles, with fade animation) onto a video and write a validated artifact with provenance",
       "inputs": [

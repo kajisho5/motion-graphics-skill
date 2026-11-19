@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.4 — 2026-11-19
+
+- ci(release): give the release test step an ffmpeg-skill checkout (#55) (c5aae28)
+- ci(release): test the release commit before pushing; no release for chore/ci/docs-only changes (#54) (d579bdf)
+
 ## v0.4.3 — 2026-11-19
 
 - ci: run contract-diff on every pull request (#52) (8b6eacd)
