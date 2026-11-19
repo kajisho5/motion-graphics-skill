@@ -8,6 +8,8 @@ Rule:
     (which can start from 0.0.0 and undercut an already-set higher starting version).
   - The latest tag's version matches pyproject.toml's current version -> no manual edit has happened since that
     tag; let release-drafter's dry-run resolved version (passed in via DRAFTED_TAG) win (bumped=true).
+  - The latest tag matches, but every pull request merged since it is labelled only chore / ci / docs / test
+    (RELEASABLE=false from .github/scripts/release_gate.py, Velisa ADR-023) -> nothing to release (release=false).
   - Otherwise pyproject.toml is already ahead of the latest tag -> a human bumped it by hand; respect that value
     verbatim and do not auto-bump on top of it (bumped=false).
 """
@@ -57,6 +59,10 @@ def main() -> None:
 
     if tag is None:
         version, bumped, reason = current, "false", "no tag exists yet; using pyproject.toml's version as the first release"
+    elif current == strip_v(tag) and os.environ.get("RELEASABLE", "").strip() == "false":
+        print(f"::notice::only chore/ci/docs/test pull requests merged since {tag}: nothing to release")
+        write_outputs(version=current, bumped="false", previous_tag=tag, release="false")
+        return
     elif current == strip_v(tag):
         if not drafted_version:
             print("::error::no tag exists ahead of pyproject.toml's version, but release-drafter did not resolve a next version", file=sys.stderr)
@@ -66,7 +72,7 @@ def main() -> None:
         version, bumped, reason = current, "false", f"pyproject.toml ({current}) is already ahead of latest tag {tag}; respecting the manual bump"
 
     print(f"::notice::{reason} -> v{version} (bumped={bumped})")
-    write_outputs(version=version, bumped=bumped, previous_tag=tag or "")
+    write_outputs(version=version, bumped=bumped, previous_tag=tag or "", release="true")
 
 
 if __name__ == "__main__":
