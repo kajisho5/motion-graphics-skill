@@ -1,0 +1,2135 @@
+{
+  "schema": "motion-graphics/contract@1",
+  "skill_id": "motion-graphics",
+  "id": "motion-graphics",
+  "name": "motion-graphics-skill",
+  "package": "motion-graphics-skill",
+  "version": "0.4.0",
+  "contract_version": 1,
+  "kind": "execution",
+  "role": "motion graphics rendering (execution); not design, not decision",
+  "description": "Deterministic motion-graphics rendering execution: title cards, lower thirds, free-form text overlays, image/logo overlays, video-on-video picture-in-picture/chroma-key overlays, and solid-colour rectangles (shape), with built-in template animation (title/lower-third fade and slide) or a configurable linear fade (text/image overlays only); typed Graphics Document in, a validated video artifact with provenance out. Not an AI agent: it never chooses what to show, when to show it, or how it should look.",
+  "repository": "https://github.com/kajisho5/motion-graphics-skill",
+  "not_provided": [
+    "AI reasoning",
+    "design decisions",
+    "production plans",
+    "template or content selection",
+    "arbitrary ffmpeg filters",
+    "shapes other than a solid rectangle (rounded corners, borders, rotation, gradients; ADR-22)",
+    "position/scale animation (see unsupported_animations)",
+    "video editing (video-editing-skill)",
+    "color grading (color-grading-skill)",
+    "subtitle generation (subtitle-skill)",
+    "shell execution",
+    "network access"
+  ],
+  "tools": [
+    {
+      "tool_id": "motion-graphics/run",
+      "skill_id": "motion-graphics",
+      "version": "0.4.0",
+      "role": "execution",
+      "description": "Render a typed Graphics Document (titles, lower thirds, text overlays, image/logo overlays, video-on-video picture-in-picture/chroma-key overlays, solid-colour rectangles, with fade animation) onto a video and write a validated artifact with provenance",
+      "inputs": [
+        "request document (stdin)"
+      ],
+      "input_type": "motion-graphics/request@1",
+      "produces_output": true,
+      "writes_media": true,
+      "deterministic": true,
+      "idempotency_hint": "content_equivalent; non-final intermediates reused by deterministic operation id",
+      "element_types": [
+        "bug",
+        "chapter",
+        "countdown",
+        "hook",
+        "image_overlay",
+        "logo",
+        "lower_third",
+        "meme",
+        "progress",
+        "rendered_layer",
+        "shape",
+        "sticker",
+        "text_overlay",
+        "title",
+        "video_overlay"
+      ],
+      "supports": {
+        "dry_run": true,
+        "timeout": true,
+        "cancel": true,
+        "validate": true
+      },
+      "verification": "every artifact is probed (video stream, resolution, duration, sha256); the final output is always re-validated even when intermediates were reused",
+      "provenance": "OBSERVED",
+      "mutates_input": false,
+      "delegates_to": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/graphics",
+        "ffmpeg-skill/overlay",
+        "ffmpeg-skill/background",
+        "ffmpeg-skill/color"
+      ]
+    }
+  ],
+  "provides": [
+    {
+      "id": "motion_graphics.bug",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "bug"
+    },
+    {
+      "id": "motion_graphics.chapter",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "chapter"
+    },
+    {
+      "id": "motion_graphics.countdown",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "countdown"
+    },
+    {
+      "id": "motion_graphics.hook",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "hook"
+    },
+    {
+      "id": "motion_graphics.overlay",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "image_overlay"
+    },
+    {
+      "id": "motion_graphics.logo",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "logo"
+    },
+    {
+      "id": "motion_graphics.lower_third",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "lower_third"
+    },
+    {
+      "id": "motion_graphics.meme",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "meme"
+    },
+    {
+      "id": "motion_graphics.progress",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "progress"
+    },
+    {
+      "id": "motion_graphics.rendered_layer",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "rendered_layer"
+    },
+    {
+      "id": "motion_graphics.shape",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "shape"
+    },
+    {
+      "id": "motion_graphics.sticker",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "sticker"
+    },
+    {
+      "id": "motion_graphics.text_overlay",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "text_overlay"
+    },
+    {
+      "id": "motion_graphics.title_card",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "title"
+    },
+    {
+      "id": "motion_graphics.video_overlay",
+      "lifecycle": "EXPERIMENTAL",
+      "tool_id": "motion-graphics/run",
+      "element_type": "video_overlay"
+    }
+  ],
+  "dependencies": [
+    {
+      "skill_id": "ffmpeg-skill",
+      "version_range": ">=1.0 <3.0",
+      "range_of": "contract_version",
+      "required": true,
+      "tools": [
+        "ffmpeg-skill/probe",
+        "ffmpeg-skill/graphics",
+        "ffmpeg-skill/overlay",
+        "ffmpeg-skill/background",
+        "ffmpeg-skill/color"
+      ]
+    }
+  ],
+  "element_types": [
+    {
+      "type": "title",
+      "description": "Centered title card with an optional subtitle. Built-in 0.3s alpha fade in/out (ffmpeg-skill/graphics --template title); not configurable per element.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "builtin_fade",
+      "parameters": {
+        "title": {
+          "type": "string",
+          "required": true,
+          "max_length": 200
+        },
+        "subtitle": {
+          "type": "string",
+          "required": false,
+          "max_length": 200
+        },
+        "text_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        },
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "filter:drawbox",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "lower_third",
+      "description": "Name + title bar sliding in from the left. Built-in slide-in/out and fade (ffmpeg-skill/graphics --template lower-third); not configurable per element.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "builtin_slide_fade",
+      "parameters": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "max_length": 200
+        },
+        "title": {
+          "type": "string",
+          "required": false,
+          "max_length": 200
+        },
+        "text_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        },
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "filter:overlay",
+        "filter:color",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "text_overlay",
+      "description": "Free-form text drawn at a position, with an optional configurable fade in/out (ffmpeg-skill/overlay --text).",
+      "tool": "ffmpeg-skill/overlay",
+      "animation": "configurable",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "required": true,
+          "max_length": 500
+        },
+        "position": {
+          "type": "position",
+          "required": false,
+          "default": "bottom"
+        },
+        "margin": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 2000,
+          "default": 24
+        },
+        "font": {
+          "type": "font",
+          "required": false
+        },
+        "font_size": {
+          "type": "integer",
+          "required": false,
+          "min": 8,
+          "max": 300,
+          "default": 42
+        },
+        "font_color": {
+          "type": "color",
+          "required": false,
+          "default": "white"
+        },
+        "border_width": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 20,
+          "default": 2
+        },
+        "border_color": {
+          "type": "color",
+          "required": false,
+          "default": "black"
+        },
+        "box": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "box_color": {
+          "type": "color",
+          "required": false,
+          "default": "black@0.5"
+        },
+        "opacity": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "image_overlay",
+      "description": "Composite a PNG/JPG image or logo at a position, with optional static scale and a configurable fade in/out (ffmpeg-skill/overlay --image).",
+      "tool": "ffmpeg-skill/overlay",
+      "animation": "configurable",
+      "parameters": {
+        "image_path": {
+          "type": "path",
+          "required": true
+        },
+        "position": {
+          "type": "position",
+          "required": false,
+          "default": "top-right"
+        },
+        "margin": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 2000,
+          "default": 24
+        },
+        "scale_width": {
+          "type": "integer",
+          "required": false,
+          "min": 1,
+          "max": 8192
+        },
+        "scale_percent": {
+          "type": "number",
+          "required": false,
+          "min": 0.1,
+          "max": 100.0
+        },
+        "opacity": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:overlay",
+        "filter:scale",
+        "filter:colorchannelmixer",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "video_overlay",
+      "description": "Composite a second video as a picture-in-picture layer at a position, with optional static scale, opacity, and chroma-key (green-screen) removal (ffmpeg-skill/overlay --video, --chromakey). Only this element's own audio track, if any, is dropped -- the base video's audio is unaffected, same as image_overlay/text_overlay.",
+      "tool": "ffmpeg-skill/overlay",
+      "animation": "none",
+      "parameters": {
+        "video_path": {
+          "type": "path",
+          "required": true
+        },
+        "position": {
+          "type": "position",
+          "required": false,
+          "default": "bottom-right"
+        },
+        "margin": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 2000,
+          "default": 24
+        },
+        "scale_width": {
+          "type": "integer",
+          "required": false,
+          "min": 1,
+          "max": 8192
+        },
+        "scale_percent": {
+          "type": "number",
+          "required": false,
+          "min": 0.1,
+          "max": 100.0
+        },
+        "opacity": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0
+        },
+        "chromakey": {
+          "type": "color",
+          "required": false
+        },
+        "chromakey_similarity": {
+          "type": "number",
+          "required": false,
+          "min": 0.01,
+          "max": 1.0,
+          "default": 0.15
+        },
+        "chromakey_blend": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 0.05
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:overlay",
+        "filter:scale",
+        "filter:colorchannelmixer",
+        "filter:chromakey",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "bug",
+      "description": "Persistent text bug in a corner (e.g. \"@handle\" or \"LIVE\"). Built-in 0.3s alpha fade in/out (ffmpeg-skill/graphics --template bug); not configurable per element.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "builtin_fade",
+      "parameters": {
+        "title": {
+          "type": "string",
+          "required": true,
+          "max_length": 200
+        },
+        "position": {
+          "type": "string",
+          "required": false,
+          "default": "top-right",
+          "enum": [
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+          ]
+        },
+        "text_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "chapter",
+      "description": "Small chip in a corner (e.g. \"Part 2 -- Setup\"). Built-in 0.3s alpha fade in/out (ffmpeg-skill/graphics --template chapter); not configurable per element.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "builtin_fade",
+      "parameters": {
+        "title": {
+          "type": "string",
+          "required": true,
+          "max_length": 200
+        },
+        "position": {
+          "type": "string",
+          "required": false,
+          "default": "bottom-left",
+          "enum": [
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+          ]
+        },
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "progress",
+      "description": "Thin progress bar along the bottom of the frame that fills from empty to full over the element's own start/end window (ffmpeg-skill/graphics --template progress). No text, no position (always full-width along the bottom), and no fade -- it has none of its own to expose: the bar's fill is driven entirely by the element's timeline, not by an alpha.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "none",
+      "parameters": {
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:color",
+        "filter:drawbox",
+        "filter:overlay",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "countdown",
+      "description": "Big centered numbers counting down from count_from to 0, evenly spaced across the element's own start/end window, each with a brief built-in pulse (ffmpeg-skill/graphics --template countdown). No text, no position (always centered).",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "builtin_pulse",
+      "parameters": {
+        "count_from": {
+          "type": "integer",
+          "required": false,
+          "default": 5,
+          "min": 1,
+          "max": 60
+        },
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "sticker",
+      "description": "Filled chip of short text in a corner (e.g. \"NEW\", \"LIVE NOW\") that pops in: the chip fades up while rising 0.25s into place, and fades out over the last 0.3s (ffmpeg-skill/graphics --template sticker); not configurable per element. The text is drawn in the template's fixed dark colour on a primary-colour plate, so only primary_color is exposed -- text_color would have no effect on this template.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "builtin_pop",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "required": true,
+          "max_length": 200
+        },
+        "position": {
+          "type": "string",
+          "required": false,
+          "default": "top-right",
+          "enum": [
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+          ]
+        },
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "encoder:libx264",
+        "graphics-template:sticker"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "hook",
+      "description": "Full-width opening card with a large centered title over a dark band, and a thin bar along the top of the frame that empties across the element's own start/end window so the viewer sees how long the card lasts (ffmpeg-skill/graphics --template hook, the short-form opener). The card stays up for the whole window: this skill passes the window's length as the template's own --duration. No fade.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "none",
+      "parameters": {
+        "title": {
+          "type": "string",
+          "required": true,
+          "max_length": 200
+        },
+        "text_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        },
+        "primary_color": {
+          "type": "color",
+          "required": false,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/graphics as RRGGBB); no @alpha: the template draws this colour opaque and has no opacity for it"
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "filter:drawbox",
+        "filter:overlay",
+        "filter:color",
+        "encoder:libx264",
+        "graphics-template:hook"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "meme",
+      "description": "Classic meme layout: heavy white upper-case lines with a black outline, one at the top margin and one at the bottom margin (ffmpeg-skill/graphics --template meme). At least one of top / bottom is required. Colours, position and size are fixed by the template, and there is no fade.",
+      "tool": "ffmpeg-skill/graphics",
+      "animation": "none",
+      "parameters": {
+        "top": {
+          "type": "string",
+          "required": false,
+          "max_length": 200
+        },
+        "bottom": {
+          "type": "string",
+          "required": false,
+          "max_length": 200
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:drawtext",
+        "encoder:libx264",
+        "graphics-template:meme"
+      ],
+      "deterministic": "content_equivalent",
+      "constraints": [
+        {
+          "at_least_one_of": [
+            "top",
+            "bottom"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "shape",
+      "description": "Solid-colour rectangle of an exact size at a position, with opacity, over the element's start/end window (e.g. a backing plate behind text, a letterbox bar, a highlight box): ffmpeg-skill/background generates the rectangle as a clip and ffmpeg-skill/overlay --video composites it, two tool calls in one stage (ADR-22). Rectangles only: no rounded corners, border, rotation or gradient, and no fade (the --video branch has none).",
+      "tool": "ffmpeg-skill/overlay",
+      "animation": "none",
+      "parameters": {
+        "width": {
+          "type": "integer",
+          "required": true,
+          "min": 2,
+          "max": 7680,
+          "multiple_of": 2
+        },
+        "height": {
+          "type": "integer",
+          "required": true,
+          "min": 2,
+          "max": 7680,
+          "multiple_of": 2
+        },
+        "color": {
+          "type": "color",
+          "required": true,
+          "alpha": false,
+          "description": "RRGGBB hex or a colour name from the contract's colors.named table (sent to ffmpeg-skill/background as 0xRRGGBB); no @alpha: use opacity"
+        },
+        "position": {
+          "type": "position",
+          "required": false,
+          "default": "center"
+        },
+        "margin": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 2000,
+          "default": 24
+        },
+        "opacity": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:color",
+        "filter:overlay",
+        "filter:colorchannelmixer",
+        "encoder:libx264",
+        "ffmpeg-skill-tool:background"
+      ],
+      "deterministic": "content_equivalent",
+      "generator": "ffmpeg-skill/background"
+    },
+    {
+      "type": "logo",
+      "description": "The active theme's logo (options.themes / options.theme) composited at a position over the element's window (ffmpeg-skill/overlay --image). Position, margin, width and opacity default to the theme's logo settings.",
+      "tool": "ffmpeg-skill/overlay",
+      "animation": "none",
+      "parameters": {
+        "position": {
+          "type": "position",
+          "required": false,
+          "default": "top-right"
+        },
+        "margin": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 2000,
+          "default": 24
+        },
+        "scale_width": {
+          "type": "integer",
+          "required": false,
+          "min": 1,
+          "max": 8192
+        },
+        "scale_percent": {
+          "type": "number",
+          "required": false,
+          "min": 0.1,
+          "max": 100.0
+        },
+        "opacity": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:overlay",
+        "filter:scale",
+        "filter:colorchannelmixer",
+        "encoder:libx264"
+      ],
+      "deterministic": "content_equivalent"
+    },
+    {
+      "type": "rendered_layer",
+      "description": "Place a pre-rendered clip with an alpha channel (e.g. an animated lower third exported as ProRes 4444) at a position over the element's window (ffmpeg-skill/overlay --video --place). in_duration seconds from the clip's start play at the element's start, out_duration seconds from its end finish at the element's end, and the part between them (the loop) is repeated to fill the rest when loop is true, or played once and cut when false. The layer must decode with alpha (a yuva/rgba pixel format: ProRes 4444, QuickTime Animation, PNG in MOV); a VP9 alpha WebM is refused because overlay decodes it without its alpha. No fade or other motion of its own: the animation is the clip's. This is the path for animated overlays (slide, move, scale, keyframed opacity): render them as such a clip. title_json names the clip's title.json (velisa/title@1, written by hyperframes-skill render beside the clip): its segments give in_duration / out_duration / loop, and a value the request states wins (see the contract's title_json).",
+      "tool": "ffmpeg-skill/overlay",
+      "animation": "none",
+      "parameters": {
+        "video_path": {
+          "type": "path",
+          "required": true
+        },
+        "position": {
+          "type": "position",
+          "required": false,
+          "default": "center"
+        },
+        "margin": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "max": 2000,
+          "default": 24
+        },
+        "scale_width": {
+          "type": "integer",
+          "required": false,
+          "min": 1,
+          "max": 8192
+        },
+        "scale_percent": {
+          "type": "number",
+          "required": false,
+          "min": 0.1,
+          "max": 100.0
+        },
+        "opacity": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 1.0,
+          "default": 1.0
+        },
+        "in_duration": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 60.0,
+          "default": 0.0
+        },
+        "out_duration": {
+          "type": "number",
+          "required": false,
+          "min": 0.0,
+          "max": 60.0,
+          "default": 0.0
+        },
+        "loop": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "title_json": {
+          "type": "path",
+          "required": false
+        }
+      },
+      "required_capabilities": [
+        "ffmpeg-skill",
+        "ffmpeg",
+        "ffprobe",
+        "filter:overlay",
+        "filter:scale",
+        "filter:colorchannelmixer",
+        "encoder:libx264",
+        "ffmpeg-skill-flag:overlay.place"
+      ],
+      "deterministic": "content_equivalent"
+    }
+  ],
+  "unsupported_element_types": [],
+  "animations": [
+    {
+      "kind": "fade",
+      "description": "Linear alpha fade in at start and out at end, over the same duration (ffmpeg-skill/overlay --fade). Only for text_overlay and image_overlay.",
+      "parameters": {
+        "duration": {
+          "type": "number",
+          "required": true,
+          "min": 0.01,
+          "max": 30.0
+        }
+      },
+      "applies_to": [
+        "text_overlay",
+        "image_overlay"
+      ]
+    }
+  ],
+  "unsupported_animations": [
+    {
+      "kind": "slide",
+      "status": "not_implemented",
+      "reason": "position animation is not exposed as a typed, per-element parameter by ffmpeg-skill/overlay; lower_third has a fixed, non-configurable built-in slide instead; for animated graphics, render the motion as a clip with alpha (e.g. hyperframes-skill, ProRes 4444) and place it with the rendered_layer element (its title.json gives the in / loop / out)"
+    },
+    {
+      "kind": "move",
+      "status": "not_implemented",
+      "reason": "arbitrary position keyframes would require a per-frame expression, which this skill does not construct (no raw filters, STEP 10); for animated graphics, render the motion as a clip with alpha (e.g. hyperframes-skill, ProRes 4444) and place it with the rendered_layer element (its title.json gives the in / loop / out)"
+    },
+    {
+      "kind": "scale",
+      "status": "not_implemented",
+      "reason": "scale animation over time is not exposed as a typed parameter by ffmpeg-skill/overlay (static --scale / --scale-percent only); for animated graphics, render the motion as a clip with alpha (e.g. hyperframes-skill, ProRes 4444) and place it with the rendered_layer element (its title.json gives the in / loop / out)"
+    },
+    {
+      "kind": "opacity_keyframes",
+      "status": "not_implemented",
+      "reason": "arbitrary opacity keyframe curves are not supported; use a fade (2-point in/out/in_out) instead, or for animated graphics, render the motion as a clip with alpha (e.g. hyperframes-skill, ProRes 4444) and place it with the rendered_layer element (its title.json gives the in / loop / out)"
+    }
+  ],
+  "platforms": {
+    "names": [
+      "broadcast",
+      "facebook",
+      "instagram",
+      "linkedin",
+      "podcast",
+      "reels",
+      "shorts",
+      "tiktok",
+      "twitter",
+      "youtube",
+      "youtube-shorts"
+    ],
+    "request_field": "options.platform",
+    "applies_to": "every graphics and overlay stage of the document (one destination per document)",
+    "effect": "an element margin the request does not give explicitly becomes that destination's safe zone (ffmpeg-skill --platform, per edge: e.g. a top-left logo clears TikTok's status bar); a margin the request gives wins -- except that ffmpeg-skill/overlay treats a margin equal to its own default (24) as not given, so the safe zone still applies to an explicit 24; explicit {x,y} positions are unaffected",
+    "requires": "an ffmpeg-skill checkout whose graphics/overlay tools have --platform; otherwise the request is refused before rendering (TOOL_ERROR)"
+  },
+  "colors": {
+    "named": {
+      "aliceblue": "F0F8FF",
+      "antiquewhite": "FAEBD7",
+      "aqua": "00FFFF",
+      "aquamarine": "7FFFD4",
+      "azure": "F0FFFF",
+      "beige": "F5F5DC",
+      "bisque": "FFE4C4",
+      "black": "000000",
+      "blanchedalmond": "FFEBCD",
+      "blue": "0000FF",
+      "blueviolet": "8A2BE2",
+      "brown": "A52A2A",
+      "burlywood": "DEB887",
+      "cadetblue": "5F9EA0",
+      "chartreuse": "7FFF00",
+      "chocolate": "D2691E",
+      "coral": "FF7F50",
+      "cornflowerblue": "6495ED",
+      "cornsilk": "FFF8DC",
+      "crimson": "DC143C",
+      "cyan": "00FFFF",
+      "darkblue": "00008B",
+      "darkcyan": "008B8B",
+      "darkgoldenrod": "B8860B",
+      "darkgray": "A9A9A9",
+      "darkgreen": "006400",
+      "darkkhaki": "BDB76B",
+      "darkmagenta": "8B008B",
+      "darkolivegreen": "556B2F",
+      "darkorange": "FF8C00",
+      "darkorchid": "9932CC",
+      "darkred": "8B0000",
+      "darksalmon": "E9967A",
+      "darkseagreen": "8FBC8F",
+      "darkslateblue": "483D8B",
+      "darkslategray": "2F4F4F",
+      "darkturquoise": "00CED1",
+      "darkviolet": "9400D3",
+      "deeppink": "FF1493",
+      "deepskyblue": "00BFFF",
+      "dimgray": "696969",
+      "dodgerblue": "1E90FF",
+      "firebrick": "B22222",
+      "floralwhite": "FFFAF0",
+      "forestgreen": "228B22",
+      "fuchsia": "FF00FF",
+      "gainsboro": "DCDCDC",
+      "ghostwhite": "F8F8FF",
+      "gold": "FFD700",
+      "goldenrod": "DAA520",
+      "gray": "808080",
+      "green": "008000",
+      "greenyellow": "ADFF2F",
+      "honeydew": "F0FFF0",
+      "hotpink": "FF69B4",
+      "indianred": "CD5C5C",
+      "indigo": "4B0082",
+      "ivory": "FFFFF0",
+      "khaki": "F0E68C",
+      "lavender": "E6E6FA",
+      "lavenderblush": "FFF0F5",
+      "lawngreen": "7CFC00",
+      "lemonchiffon": "FFFACD",
+      "lightblue": "ADD8E6",
+      "lightcoral": "F08080",
+      "lightcyan": "E0FFFF",
+      "lightgoldenrodyellow": "FAFAD2",
+      "lightgreen": "90EE90",
+      "lightgrey": "D3D3D3",
+      "lightpink": "FFB6C1",
+      "lightsalmon": "FFA07A",
+      "lightseagreen": "20B2AA",
+      "lightskyblue": "87CEFA",
+      "lightslategray": "778899",
+      "lightsteelblue": "B0C4DE",
+      "lightyellow": "FFFFE0",
+      "lime": "00FF00",
+      "limegreen": "32CD32",
+      "linen": "FAF0E6",
+      "magenta": "FF00FF",
+      "maroon": "800000",
+      "mediumaquamarine": "66CDAA",
+      "mediumblue": "0000CD",
+      "mediumorchid": "BA55D3",
+      "mediumpurple": "9370D8",
+      "mediumseagreen": "3CB371",
+      "mediumslateblue": "7B68EE",
+      "mediumspringgreen": "00FA9A",
+      "mediumturquoise": "48D1CC",
+      "mediumvioletred": "C71585",
+      "midnightblue": "191970",
+      "mintcream": "F5FFFA",
+      "mistyrose": "FFE4E1",
+      "moccasin": "FFE4B5",
+      "navajowhite": "FFDEAD",
+      "navy": "000080",
+      "oldlace": "FDF5E6",
+      "olive": "808000",
+      "olivedrab": "6B8E23",
+      "orange": "FFA500",
+      "orangered": "FF4500",
+      "orchid": "DA70D6",
+      "palegoldenrod": "EEE8AA",
+      "palegreen": "98FB98",
+      "paleturquoise": "AFEEEE",
+      "palevioletred": "D87093",
+      "papayawhip": "FFEFD5",
+      "peachpuff": "FFDAB9",
+      "peru": "CD853F",
+      "pink": "FFC0CB",
+      "plum": "DDA0DD",
+      "powderblue": "B0E0E6",
+      "purple": "800080",
+      "red": "FF0000",
+      "rosybrown": "BC8F8F",
+      "royalblue": "4169E1",
+      "saddlebrown": "8B4513",
+      "salmon": "FA8072",
+      "sandybrown": "F4A460",
+      "seagreen": "2E8B57",
+      "seashell": "FFF5EE",
+      "sienna": "A0522D",
+      "silver": "C0C0C0",
+      "skyblue": "87CEEB",
+      "slateblue": "6A5ACD",
+      "slategray": "708090",
+      "snow": "FFFAFA",
+      "springgreen": "00FF7F",
+      "steelblue": "4682B4",
+      "tan": "D2B48C",
+      "teal": "008080",
+      "thistle": "D8BFD8",
+      "tomato": "FF6347",
+      "turquoise": "40E0D0",
+      "violet": "EE82EE",
+      "wheat": "F5DEB3",
+      "white": "FFFFFF",
+      "whitesmoke": "F5F5F5",
+      "yellow": "FFFF00",
+      "yellowgreen": "9ACD32"
+    },
+    "forms": "a name from `named` (any case) or bare RRGGBB hex (no '#' or '0x'), optionally followed by @A with A in [0, 1]",
+    "names": "FFmpeg's own colour-name table (libavutil parseutils, `ffmpeg -colors`), fixed in this skill: a name is the same RRGGBB on every element type; a name not in it is INVALID_REQUEST",
+    "alpha": "accepted by a color parameter unless its schema says alpha: false; there, @A is refused before anything renders (UNSUPPORTED_OPERATION, details.reason color_alpha_not_supported, details.element_id) -- never sent, never dropped",
+    "delegates": {
+      "ffmpeg-skill/graphics": "RRGGBB only (a name is sent as its RRGGBB; no @alpha, no opacity flag)",
+      "ffmpeg-skill/overlay": "name, 0xRRGGBB (a bare RRGGBB gets the 0x prefix) and @alpha, as ffmpeg reads them",
+      "ffmpeg-skill/background": "shape.color as 0xRRGGBB (a name is converted first); no @alpha: the shape's transparency is its opacity parameter (ADR-22)"
+    }
+  },
+  "style_presets": {
+    "names": [
+      "corporate",
+      "minimal",
+      "neon",
+      "news",
+      "swiss",
+      "wafu"
+    ],
+    "roles": [
+      "primary",
+      "secondary",
+      "background",
+      "text"
+    ],
+    "presets": [
+      {
+        "name": "corporate",
+        "description": "Corporate: white text on a navy plate, blue primary, a short fade.",
+        "roles": {
+          "primary": "0B5FFF",
+          "secondary": "00A3E0",
+          "background": "0F1C2E",
+          "text": "FFFFFF"
+        },
+        "font_id": "system:dejavu-sans",
+        "box": true,
+        "box_opacity": 0.8,
+        "border_width": 0,
+        "margin": 48,
+        "fade": 0.3
+      },
+      {
+        "name": "minimal",
+        "description": "Minimal: white text with no plate and no outline, a wide margin, a slow fade.",
+        "roles": {
+          "primary": "FFFFFF",
+          "secondary": "BBBBBB",
+          "background": "000000",
+          "text": "FFFFFF"
+        },
+        "font_id": "system:dejavu-sans",
+        "box": false,
+        "box_opacity": 0.0,
+        "border_width": 0,
+        "margin": 64,
+        "fade": 0.4
+      },
+      {
+        "name": "neon",
+        "description": "Neon: near-white text on a dark violet plate, cyan primary, magenta secondary, a quick fade.",
+        "roles": {
+          "primary": "00E5FF",
+          "secondary": "FF2BD6",
+          "background": "0B0221",
+          "text": "F5F5F5"
+        },
+        "font_id": "system:dejavu-sans",
+        "box": true,
+        "box_opacity": 0.6,
+        "border_width": 2,
+        "margin": 40,
+        "fade": 0.25
+      },
+      {
+        "name": "news",
+        "description": "News: white text on a dark plate, red primary, yellow secondary, a tight margin, no fade.",
+        "roles": {
+          "primary": "C8102E",
+          "secondary": "FFD200",
+          "background": "101820",
+          "text": "FFFFFF"
+        },
+        "font_id": "system:dejavu-sans",
+        "box": true,
+        "box_opacity": 0.85,
+        "border_width": 0,
+        "margin": 32,
+        "fade": null
+      },
+      {
+        "name": "swiss",
+        "description": "Swiss / international style: black text on a solid white plate, one red accent, no fade.",
+        "roles": {
+          "primary": "E30613",
+          "secondary": "000000",
+          "background": "FFFFFF",
+          "text": "111111"
+        },
+        "font_id": "system:dejavu-sans",
+        "box": true,
+        "box_opacity": 0.95,
+        "border_width": 0,
+        "margin": 48,
+        "fade": null
+      },
+      {
+        "name": "wafu",
+        "description": "Wafu (Japanese-inspired): off-white text on an ink-black plate, crimson primary, gold secondary, a serif face, a slow fade. A colour and type bundle only: it changes no line breaking or other regional behaviour.",
+        "roles": {
+          "primary": "B7282E",
+          "secondary": "C9A063",
+          "background": "1E1E1E",
+          "text": "F7F3E8"
+        },
+        "font_id": "system:dejavu-serif",
+        "box": true,
+        "box_opacity": 0.7,
+        "border_width": 0,
+        "margin": 56,
+        "fade": 0.5
+      }
+    ],
+    "targets": {
+      "bug": {
+        "text_color": "role:text"
+      },
+      "chapter": {
+        "primary_color": "role:primary"
+      },
+      "countdown": {
+        "primary_color": "role:primary"
+      },
+      "hook": {
+        "text_color": "role:text",
+        "primary_color": "role:primary"
+      },
+      "image_overlay": {
+        "margin": "margin",
+        "animation": "fade"
+      },
+      "logo": {
+        "margin": "margin"
+      },
+      "lower_third": {
+        "text_color": "role:text",
+        "primary_color": "role:primary"
+      },
+      "meme": {},
+      "progress": {
+        "primary_color": "role:primary"
+      },
+      "rendered_layer": {
+        "margin": "margin"
+      },
+      "shape": {
+        "margin": "margin"
+      },
+      "sticker": {
+        "primary_color": "role:primary"
+      },
+      "text_overlay": {
+        "font_color": "role:text",
+        "border_color": "role:background",
+        "box": "box",
+        "box_color": "box_color",
+        "font": "font_id",
+        "border_width": "border_width",
+        "margin": "margin",
+        "animation": "fade"
+      },
+      "title": {
+        "text_color": "role:text",
+        "primary_color": "role:primary"
+      },
+      "video_overlay": {
+        "margin": "margin"
+      }
+    },
+    "request_fields": {
+      "element": "style (a preset name; overrides options.style for that element)",
+      "document": "options.style (the preset for every element without its own style)",
+      "brand_kit": "options.brand_kit {primary?, secondary?, background?, text?}: opaque RRGGBB or a colour name"
+    },
+    "precedence": "an explicit parameter > a brand_kit role > the preset's role; a preset fills only optional parameters the request left out",
+    "notes": [
+      "box_color is the background role at the preset's box_opacity (ffmpeg-skill/overlay takes @alpha)",
+      "a preset supplies no margin when options.platform is set (the destination's safe zone applies)",
+      "a preset fade is applied to text_overlay / image_overlay only, and only when the element has no animation; a preset fade longer than half the element's window is left out and listed in style.skipped",
+      "meme takes nothing from a preset: its colours, position and size are fixed by the template",
+      "no new animation: a preset never adds one an element type does not already offer"
+    ],
+    "response": "each styled element carries style {preset, brand_kit, applied: {parameter: preset|brand_kit}, skipped?: [...]} in validate/plan output and in the run response's timeline"
+  },
+  "text_fit": {
+    "applies_to": [
+      "lower_third",
+      "title"
+    ],
+    "request_field": "elements[].fit",
+    "fields": {
+      "width": {
+        "type": "integer",
+        "required": true,
+        "min": 16,
+        "max": 7680,
+        "description": "the box width in px the template's text (with its inner padding) must stay within"
+      },
+      "max_lines": {
+        "type": "integer",
+        "required": false,
+        "min": 1,
+        "max": 6,
+        "default": 2,
+        "description": "lines per text before it counts as overflow"
+      },
+      "min_scale": {
+        "type": "number",
+        "required": false,
+        "min": 0.3,
+        "max": 1.0,
+        "default": 0.6,
+        "description": "the smallest size multiplier tried"
+      },
+      "profile": {
+        "type": "string",
+        "required": false,
+        "enum": [
+          "ja-kinsoku"
+        ],
+        "description": "an opt-in regional line-breaking profile"
+      },
+      "lang": {
+        "type": "string",
+        "required": false,
+        "description": "language tag of the text (BCP 47, e.g. en, ar, ja), passed to ffmpeg-skill/graphics --lang"
+      }
+    },
+    "profiles": {
+      "ja-kinsoku": "Japanese line-start rules: small kana, the prolonged sound mark and the middle dot do not start a line (on top of the default rules, which never start a line with closing punctuation or end one with opening punctuation)"
+    },
+    "method": [
+      "sizes tried: 1.0 down to min_scale in steps of 0.05 (ffmpeg-skill/graphics --scale); first one line per text, then up to max_lines",
+      "width: a per-character advance table in em, rounded up (a drawn line can be narrower than the estimate, not wider)",
+      "breaks: after spaces, hyphens and slashes; before and after ideographs, kana and Hangul; never before closing punctuation or after opening punctuation; never inside a run of an alphabetic script (UAX #14, simplified)",
+      "a run with no break that is wider than the box at the smallest size is broken between characters (forced_break), never cut",
+      "direction: from the first strong character (rtl for Arabic, Hebrew); the lines are given in logical order and laid out by ffmpeg-skill"
+    ],
+    "layout": {
+      "lower_third": {
+        "font_size_of_short_side": {
+          "name": 0.055,
+          "title": 0.038
+        },
+        "inner_padding_of_short_side": 0.035
+      },
+      "title": {
+        "font_size_of_short_side": {
+          "title": 0.11,
+          "subtitle": 0.045
+        },
+        "inner_padding_of_short_side": 0.0
+      }
+    },
+    "result": "operations[].parameters.fit (and plan timeline[].fit_result): scale, texts {lines, font_size, direction, widest_px}, pad, fits, overflow, forced_break, box_width, profile, lang; a warning when it does not fit max_lines or was broken between characters",
+    "requires": "ffmpeg-skill/graphics --scale and --wrap (and --lang when fit.lang is given); otherwise refused before rendering (TOOL_ERROR)",
+    "csv": "motion-graphics lower-thirds <file.csv> --video V --output O --fit-width N prints a request with one fitted lower third per row (columns: name, title, start, end, id, lang, profile)",
+    "not_provided": [
+      "phrase-level breaks from a dictionary or model (e.g. for Japanese, Thai): only the rules above",
+      "right-to-left reordering by this skill: ffmpeg-skill's text renderer lays out each line by its direction"
+    ]
+  },
+  "reserved_regions": {
+    "request_field": "options.reserved_regions",
+    "shape": {
+      "end_screen?": {
+        "duration?": "5..20 s, default 20 (the last seconds of the video)",
+        "elements?": "[{id?, x, y, width, height}] px, 1 to 4: the positions the editor sets in YouTube Studio",
+        "layout?": "default: the stated layout below for the frame's aspect (used when elements is not given)"
+      },
+      "cards?": [
+        {
+          "time": "s",
+          "duration?": "teaser length, default 5 s",
+          "region?": "{x, y, width, height} px; default the top-right area",
+          "id?": "str"
+        }
+      ],
+      "on_overlap?": "report (default: a warning per overlap) | refuse (INVALID_REQUEST, details.reason reserved_region_overlap, before rendering)"
+    },
+    "default_end_screens": {
+      "16:9": [
+        {
+          "id": "video_1",
+          "x": 0.08,
+          "y": 0.3,
+          "w": 0.3,
+          "shape": "16:9"
+        },
+        {
+          "id": "video_2",
+          "x": 0.62,
+          "y": 0.3,
+          "w": 0.3,
+          "shape": "16:9"
+        },
+        {
+          "id": "subscribe",
+          "x": 0.44,
+          "y": 0.66,
+          "w": 0.12,
+          "shape": "1:1"
+        }
+      ],
+      "9:16": [
+        {
+          "id": "video_1",
+          "x": 0.1,
+          "y": 0.34,
+          "w": 0.8,
+          "shape": "16:9"
+        },
+        {
+          "id": "subscribe",
+          "x": 0.4,
+          "y": 0.62,
+          "w": 0.2,
+          "shape": "1:1"
+        }
+      ],
+      "1:1": [
+        {
+          "id": "video_1",
+          "x": 0.15,
+          "y": 0.22,
+          "w": 0.7,
+          "shape": "16:9"
+        },
+        {
+          "id": "subscribe",
+          "x": 0.42,
+          "y": 0.7,
+          "w": 0.16,
+          "shape": "1:1"
+        }
+      ]
+    },
+    "default_end_screen_units": "x and w are fractions of the frame width, y of its height; a 16:9 element's height is w x 9/16, a 1:1 element's is w; aspect class: width/height >= 1.2 is 16:9, <= 0.83 is 9:16, otherwise 1:1",
+    "default_card_area": {
+      "x": 0.68,
+      "y": 0.02,
+      "w": 0.3,
+      "h": 0.1
+    },
+    "element_boxes": "exact for a shape, and for an image / video / rendered layer of probed size with an explicit margin (scale_percent wins over scale_width, as in the renderer); unmeasured (no box: left out of the check and of a refusal, listed in `unmeasured`) for an image / video / layer whose size could not be probed; estimated from the template layout and the text_fit width table otherwise (the result says which)",
+    "result": "response.reserved_regions {on_overlap, regions [{kind, id, box, start, end, source}], overlaps [{element_id, type, region, time, element_box, area, precision}], element_boxes, unmeasured [element id]}; one warning per overlap and one per unmeasured element",
+    "note": "this skill moves nothing: it reports (or refuses); where a graphic goes is the caller's decision"
+  },
+  "themes": {
+    "file_schema": "motion-graphics/theme@1",
+    "file_shape": {
+      "schema?": "motion-graphics/theme@1",
+      "name?": "id",
+      "colors": {
+        "primary": "RRGGBB or a colour name",
+        "secondary": "RRGGBB or a colour name",
+        "background": "RRGGBB or a colour name",
+        "text": "RRGGBB or a colour name"
+      },
+      "font?": "{font_id} | {font_file} (relative to the theme file)",
+      "logo?": {
+        "path": "PNG/JPG, relative to the theme file",
+        "position?": "a named position",
+        "margin?": "px",
+        "scale_width?": "px",
+        "opacity?": "0..1"
+      },
+      "spacing?": {
+        "margin": "px"
+      },
+      "base_style?": "a style_presets name"
+    },
+    "request_fields": {
+      "options.themes": "{name: theme file}, 1 to 16",
+      "options.theme": "the theme to use (optional when there is one)"
+    },
+    "applies": [
+      "colours: the role colours of every element (style_presets.targets), as a brand kit's would be",
+      "spacing.margin: every margin target",
+      "font: text_overlay's font and every graphics template's (--font / --font-file)",
+      "logo: the `logo` element type",
+      "base_style: the preset for the settings the theme does not give"
+    ],
+    "precedence": "an explicit parameter > the theme > its base_style preset; options.brand_kit and options.style are refused together with a theme",
+    "contrast": {
+      "method": "(L1 + 0.05) / (L2 + 0.05) of the relative luminances of the sRGB colours, lighter over darker",
+      "template_plate": "101418",
+      "pairs": [
+        {
+          "foreground": "text",
+          "background": "background",
+          "minimum": 4.5,
+          "drawn_as": "text on the theme background (text_overlay box, shape plates)"
+        },
+        {
+          "foreground": "primary",
+          "background": "background",
+          "minimum": 3.0,
+          "drawn_as": "primary accents on the theme background (graphical objects)"
+        },
+        {
+          "foreground": "text",
+          "background": "101418",
+          "minimum": 4.5,
+          "drawn_as": "lower_third name on the template's dark plate"
+        },
+        {
+          "foreground": "primary",
+          "background": "101418",
+          "minimum": 4.5,
+          "drawn_as": "lower_third second line, drawn in primary on the template's dark plate"
+        }
+      ],
+      "below_minimum": "a warning (response.warnings) and ok: false in response.theme.contrast; colours are never changed"
+    },
+    "result": "response.theme {name, label, file {sha256, size}, colors, font, logo, margin, base_style, contrast}; operations[].font_used when ffmpeg-skill reports the font it drew with",
+    "validate": "`validate` touches no files, so it checks options.themes / options.theme structurally and applies no theme",
+    "check_command": "motion-graphics theme-check <theme.json> --json prints the validated theme and its contrast report"
+  },
+  "kit": {
+    "file_schema": "velisa/kit@1",
+    "superset_of": "ffmpeg-skill brand.json: a plain brand.json (no schema key) is read the same way",
+    "request_field": "options.kit: the kit file's path; refused together with options.themes / options.theme / options.brand_kit",
+    "mapping": {
+      "colors.primary|secondary|background|text": "theme@1 colors (all four) or options.brand_kit (the roles the kit has)",
+      "font_file": "theme font.font_file",
+      "logo": "theme logo.path",
+      "logo_position": "theme logo.position (a named position)",
+      "logo_scale": "theme logo.scale_width",
+      "logo_opacity": "theme logo.opacity",
+      "safe_margin": "theme spacing.margin and logo.margin",
+      "name": "theme name (when it is a short identifier)",
+      "colours": "read as colors (remotion spelling)"
+    },
+    "without_all_four_roles": "options.brand_kit with the roles the kit has; the theme-only keys are reported unmapped",
+    "unmapped": "every other key, with the reason, in response.kit.unmapped and as a warning; nothing is dropped silently",
+    "defaults": "none: only what the kit states is passed on (ffmpeg-skill's brand.json defaults are not filled in)",
+    "precedence": "an explicit parameter > the kit > options.style (the preset)",
+    "result": "response.kit {schema, file {sha256, size}, mapped_to, theme | brand_kit, unmapped, contrast?}; with theme@1 also response.theme (label \"kit\", contrast on the kit's colours)",
+    "validate": "`validate` touches no files: options.kit is checked as a path and no kit is applied"
+  },
+  "title_json": {
+    "file_schema": "velisa/title@1",
+    "written_by": "hyperframes-skill render of title material: <stem>.title.json beside the clip (the Velisa spec for title and stinger metadata)",
+    "request_field": "elements[].parameters.title_json on a rendered_layer: the title.json file's path (PathPolicy, at most 262144 bytes, UTF-8 JSON)",
+    "mapping": {
+      "segments.in": "in_duration",
+      "segments.out": "out_duration",
+      "segments.loop > 0": "loop (true; 0 gives false)"
+    },
+    "reads": [
+      "segments",
+      "sha256",
+      "file",
+      "alpha",
+      "schema"
+    ],
+    "checks": {
+      "sha256": "when present, the clip's sha256 (else title_json_stale)",
+      "file": "when present and sha256 is not, the clip's file name (else title_json_other_file)",
+      "segments": "in + loop + out is the clip's probed length within one frame (else title_json_segments_mismatch)",
+      "alpha": "when present, straight (premultiplied: title_json_premultiplied_alpha)",
+      "schema": "when present, velisa/title@1 (else not_title_json)"
+    },
+    "errors": "INVALID_INPUT, details.reason one of bad_title_json, not_title_json, title_json_without_segments, title_json_stale, title_json_other_file, title_json_segments_mismatch, title_json_premultiplied_alpha",
+    "precedence": "a value the request states (in_duration, out_duration, loop) wins over the file, with a warning when they differ; a value it leaves out comes from the file, not the parameter's default",
+    "result": "response.title_json {<element id>: {schema, file {sha256, size}, layer_matched_by (sha256 | file | null), segments, alpha?, values {in_duration, out_duration, loop}, sources {<parameter>: request | title_json}}} in plan and run, present when an element gives title_json",
+    "validate": "`validate` touches no files: title_json is checked as a path, and the parameters it would fill are left out"
+  },
+  "layer_export": {
+    "request_field": "options.layer_export",
+    "shape": {
+      "directory": "path inside the workspace (PathPolicy): the layer files and manifest.json are written there",
+      "alpha_codec?": "png | prores4444 | qtrle | vp9 (default prores4444)",
+      "alpha_mode?": "straight | premultiplied (default straight)"
+    },
+    "containers": {
+      "prores4444": ".mov",
+      "qtrle": ".mov",
+      "png": ".mov",
+      "vp9": ".webm"
+    },
+    "files": "one per element, <element id><container>, plus manifest.json; an existing one is replaced only with document.output.overwrite (OUTPUT_ERROR, details.reason exists, before anything renders)",
+    "timing": "every layer has the programme's size, frame rate and length and starts at 0 s; the element shows at its own start..end, as in the programme",
+    "how": "ffmpeg-skill/background --transparent makes one canvas (the source's size, rate and length) and ffmpeg-skill/color --retag gives it the programme's colour tags; each element is the same graphics / overlay call that burns it into the programme, on that canvas, with --keep-alpha --alpha-codec --alpha-mode (no audio), so every layer carries the programme's matrix, primaries and transfer tags",
+    "requires": {
+      "ffmpeg_skill_flags": {
+        "background": [
+          "transparent",
+          "fps",
+          "alpha_codec",
+          "alpha_mode"
+        ],
+        "graphics": [
+          "keep_alpha",
+          "alpha_codec",
+          "alpha_mode"
+        ],
+        "overlay": [
+          "keep_alpha",
+          "alpha_codec",
+          "alpha_mode"
+        ],
+        "color": [
+          "retag"
+        ]
+      },
+      "otherwise": "TOOL_ERROR before anything renders (details.reason ffmpeg_skill_lacks_flag, details.flags; or ffmpeg_skill_lacks_alpha_codec when the checkout does not offer the codec); doctor reports capability ffmpeg-skill-feature:layer_export"
+    },
+    "result": "response.layer_export {directory, manifest {path, sha256}, alpha_codec, alpha_mode, canvas {tool, operation_id, status, output_hash, parameters, seconds}, layers [{id, type, start, end, box, box_precision, file, path, sha256, size, duration, tool, alpha_codec, alpha_mode, verified, alpha, seconds, tool_commands_observed}], verified}; plan: response.layer_export {directory, alpha_codec, alpha_mode, manifest, canvas, layers [{id, type, start, end, file, tool, box, box_precision}]}",
+    "verification": "ffmpeg-skill reads each layer's alpha back (its `alpha` step: an alpha plane is stored, and every frame's alpha is at or above the canvas's) and says `verified`; this skill also probes each layer (size, length). A layer that ffmpeg-skill does not report verified is a warning, and layer_export.verified is false",
+    "box": "the element's box at rest, as reserved_regions computes it: exact for a shape and a sized image / video / layer, estimated for templates (box_precision says which); null when it could not be measured"
+  },
+  "positions": {
+    "named": [
+      "top-left",
+      "top",
+      "top-right",
+      "left",
+      "center",
+      "right",
+      "bottom-left",
+      "bottom",
+      "bottom-right"
+    ],
+    "explicit": "{x: integer, y: integer} pixels; negative counts from the far edge (ffmpeg-skill/overlay semantics)"
+  },
+  "fonts": {
+    "registry": {
+      "system:dejavu-sans": "DejaVu Sans",
+      "system:dejavu-serif": "DejaVu Serif",
+      "system:dejavu-sans-mono": "DejaVu Sans Mono"
+    },
+    "default_font_id": "system:dejavu-sans",
+    "custom_font_file": {
+      "allowed_extensions": [
+        ".ttf",
+        ".otf",
+        ".ttc"
+      ],
+      "path_policy": true,
+      "provenance": "font_file_hash (sha256)"
+    },
+    "fallback_policy": "an unknown font_id or a missing font_file is MISSING_INPUT / INVALID_INPUT; this skill never substitutes a different font and reports success"
+  },
+  "output_formats": {
+    "container": "same extension as document.output.path (ffmpeg-skill picks the codec for it)",
+    "video_codec": "libx264",
+    "audio_codec": "aac (passthrough of the source track's presence, not its codec)"
+  },
+  "limits": {
+    "max_elements": 64,
+    "max_element_duration_seconds": 86400.0
+  },
+  "timeline": {
+    "unit": "seconds (float)",
+    "ranges": "half-open-by-convention [start, end), start >= 0, end > start, both finite (no NaN/Infinity)",
+    "element_ids": "unique within a document (id_pattern below), duplicates are DEPENDENCY_ERROR",
+    "rendering_order": "elements are rendered in (start, id) order regardless of the order they were listed in the request (docs/decisions.md); each element's own start/end are rendered exactly as given",
+    "duration_tolerance_seconds": 0.25
+  },
+  "execution": {
+    "mode": "local",
+    "canonical_invocation": [
+      "motion-graphics",
+      "run",
+      "-",
+      "--json"
+    ],
+    "stdin": "motion-graphics/request@1",
+    "stdout": "exactly one motion-graphics/response@1 document",
+    "stderr": "diagnostics only",
+    "executables": [
+      "python3 <ffmpeg-skill>/scripts/{probe,graphics,overlay}.py (argv lists)",
+      "python3 <ffmpeg-skill>/scripts/background.py (argv list; shape elements, ADR-22, and the transparent canvas of a layer export, ADR-30)",
+      "python3 <ffmpeg-skill>/scripts/color.py --retag (argv list; the layer export canvas's colour tags, ADR-30)"
+    ],
+    "executable_resolution": "ffmpeg-skill directory: --ffmpeg-skill, MOTION_GRAPHICS_FFMPEG_SKILL_DIR, VIDEO_AGENT_FFMPEG_SKILL_DIR, ~/.claude/skills/ffmpeg-skill, ./vendor/ffmpeg-skill, ../ffmpeg-skill; ffmpeg/ffprobe: PATH lookup by ffmpeg-skill",
+    "shell": false,
+    "arbitrary_executables": false,
+    "arbitrary_filters": false,
+    "network": false,
+    "input_mutation": false,
+    "ai": false
+  },
+  "ffmpeg_skill": {
+    "contract_version": "1.0",
+    "version_window": {
+      "min": null,
+      "max_exclusive": null
+    },
+    "compatibility": "capability detection, no version window: a checkout of any version is used when every required flag is present in its contract (or --help); doctor reports what was detected (docs/decisions.md ADR-18)",
+    "tools_used": [
+      "probe",
+      "graphics",
+      "overlay"
+    ],
+    "flags_used": {
+      "probe": [
+        "inputs"
+      ],
+      "graphics": [
+        "input",
+        "output",
+        "template",
+        "start",
+        "end",
+        "preset",
+        "audio_stream",
+        "title",
+        "subtitle",
+        "name",
+        "position",
+        "count_from",
+        "text_color",
+        "primary",
+        "json",
+        "quality",
+        "crf",
+        "overwrite",
+        "platform",
+        "scale",
+        "lang",
+        "wrap",
+        "bottom",
+        "duration",
+        "text",
+        "top",
+        "keep_alpha",
+        "alpha_codec",
+        "alpha_mode"
+      ],
+      "overlay": [
+        "input",
+        "output",
+        "position",
+        "margin",
+        "start",
+        "end",
+        "opacity",
+        "preset",
+        "audio_stream",
+        "fade",
+        "text",
+        "font_size",
+        "font_color",
+        "border",
+        "border_color",
+        "box",
+        "box_color",
+        "font",
+        "font_file",
+        "image",
+        "scale",
+        "scale_percent",
+        "video",
+        "chromakey",
+        "chromakey_similarity",
+        "chromakey_blend",
+        "json",
+        "quality",
+        "crf",
+        "overwrite",
+        "platform",
+        "place",
+        "keep_alpha",
+        "alpha_codec",
+        "alpha_mode"
+      ]
+    },
+    "required_flags": {
+      "probe": [
+        "inputs"
+      ],
+      "graphics": [
+        "input",
+        "output",
+        "template",
+        "start",
+        "end",
+        "preset",
+        "audio_stream",
+        "title",
+        "subtitle",
+        "name",
+        "position",
+        "count_from",
+        "text_color",
+        "primary",
+        "json"
+      ],
+      "overlay": [
+        "input",
+        "output",
+        "position",
+        "margin",
+        "start",
+        "end",
+        "opacity",
+        "preset",
+        "audio_stream",
+        "fade",
+        "text",
+        "font_size",
+        "font_color",
+        "border",
+        "border_color",
+        "box",
+        "box_color",
+        "font",
+        "font_file",
+        "image",
+        "scale",
+        "scale_percent",
+        "video",
+        "chromakey",
+        "chromakey_similarity",
+        "chromakey_blend",
+        "json"
+      ]
+    },
+    "flag_alternatives": {
+      "graphics": {
+        "encoder_quality": [
+          "quality",
+          "crf"
+        ]
+      },
+      "overlay": {
+        "encoder_quality": [
+          "quality",
+          "crf"
+        ]
+      }
+    },
+    "optional_flags": {
+      "graphics": [
+        "overwrite",
+        "platform",
+        "scale",
+        "lang",
+        "wrap"
+      ],
+      "overlay": [
+        "overwrite",
+        "platform",
+        "place"
+      ]
+    },
+    "template_requirements": {
+      "sticker": {
+        "graphics_flags": [
+          "text"
+        ]
+      },
+      "hook": {
+        "graphics_flags": [
+          "duration"
+        ]
+      },
+      "meme": {
+        "graphics_flags": [
+          "top",
+          "bottom"
+        ]
+      }
+    },
+    "generator_tools": {
+      "background": {
+        "flags": [
+          "output",
+          "duration",
+          "width",
+          "height",
+          "color",
+          "json"
+        ],
+        "optional_flags": [
+          "quality",
+          "crf",
+          "preset",
+          "overwrite"
+        ],
+        "for": [
+          "shape"
+        ]
+      }
+    }
+  },
+  "request": {
+    "schema": "motion-graphics/request@1",
+    "id_pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+    "forbidden_fields": [
+      "af",
+      "args",
+      "argv",
+      "cmd",
+      "command",
+      "commands",
+      "cwd",
+      "env",
+      "eval",
+      "exec",
+      "executable",
+      "expression",
+      "filter",
+      "filter_complex",
+      "filters",
+      "script",
+      "shell",
+      "vf"
+    ],
+    "shape": {
+      "schema": "motion-graphics/request@1",
+      "video": {
+        "path": "file"
+      },
+      "output": {
+        "path": "file",
+        "overwrite?": false
+      },
+      "elements": [
+        {
+          "id": "id",
+          "type": "bug|chapter|countdown|hook|image_overlay|logo|lower_third|meme|progress|rendered_layer|shape|sticker|text_overlay|title|video_overlay",
+          "start": 0,
+          "end": 1,
+          "parameters": {
+            "...": "see element_types[].parameters"
+          },
+          "animation?": {
+            "kind": "fade",
+            "parameters": {
+              "duration": 0.5
+            }
+          }
+        }
+      ],
+      "options?": {
+        "reuse_intermediates?": true,
+        "crf?": 18,
+        "preset?": "medium",
+        "audio_stream?": 0,
+        "platform?": "tiktok",
+        "style?": "news",
+        "reserved_regions?": {
+          "end_screen?": {
+            "duration?": 20
+          },
+          "cards?": [
+            {
+              "time": 30
+            }
+          ],
+          "on_overlap?": "report"
+        },
+        "themes?": {
+          "brand_a": "themes/brand_a.json"
+        },
+        "theme?": "brand_a",
+        "brand_kit?": {
+          "primary?": "RRGGBB",
+          "secondary?": "RRGGBB",
+          "background?": "RRGGBB",
+          "text?": "RRGGBB"
+        },
+        "kit?": "brand/kit.json",
+        "layer_export?": {
+          "directory": "layers",
+          "alpha_codec?": "prores4444",
+          "alpha_mode?": "straight"
+        }
+      },
+      "elements[].style?": "a style_presets name",
+      "elements[].fit?": {
+        "width": 600,
+        "max_lines?": 2,
+        "min_scale?": 0.6,
+        "profile?": "ja-kinsoku",
+        "lang?": "ja"
+      }
+    }
+  },
+  "response": {
+    "schema": "motion-graphics/response@1",
+    "conditional": {
+      "reserved_regions": {
+        "in": [
+          "run",
+          "plan"
+        ],
+        "when": "options.reserved_regions is given",
+        "shape": "see reserved_regions.result"
+      },
+      "layer_export": {
+        "in": [
+          "run",
+          "plan"
+        ],
+        "when": "options.layer_export is given",
+        "shape": "see layer_export.result"
+      }
+    },
+    "success": {
+      "run": {
+        "ok": true,
+        "status": "ok",
+        "dry_run": false,
+        "output": "{path, sha256, size, duration, width, height}",
+        "timeline": "[{id, type, start, end}]",
+        "operations": "[StageResult]",
+        "reused": "bool",
+        "engine": {},
+        "provenance": {},
+        "warnings": "[str] (e.g. a stage's dropped_non_av_streams surfaced as a warning; empty when there is nothing to report)"
+      },
+      "plan": {
+        "ok": true,
+        "status": "ok",
+        "dry_run": true,
+        "plan": "{document_id, video, output: {path}, timeline: [element + planned tool/asset/font]}",
+        "warnings": "[str] (e.g. one per reserved-region overlap; empty when there is nothing to report)",
+        "note": "produced by `plan`, or `run --dry-run`; writes no media; has no output/operations/provenance keys"
+      },
+      "validate": {
+        "ok": true,
+        "status": "ok",
+        "dry_run": true,
+        "validation": "{ok: true, elements: [GraphicsElement, in render order]}",
+        "note": "produced by `validate` only; structural check alone, no file-system access, no output/operations/plan keys"
+      }
+    },
+    "failure": {
+      "ok": false,
+      "status": "error|cancelled",
+      "error": {
+        "code": "one of errors.codes",
+        "message": "str",
+        "retryable": "bool",
+        "details": {}
+      },
+      "note": "the same failure shape for every command (validate/plan/run alike)"
+    }
+  },
+  "provenance": {
+    "per_operation": [
+      "operation_id",
+      "type",
+      "tool",
+      "status",
+      "parameters",
+      "input_hashes",
+      "output_hash",
+      "seconds",
+      "tool_commands_observed",
+      "dropped_non_av_streams (present, true, only when ffmpeg-skill's own subtitle/data-stream preservation fell back for that stage)",
+      "derived (shape only: the generated clip -- tool, operation_id, status, output_hash, parameters; ADR-22)"
+    ],
+    "per_output": [
+      "document_id",
+      "video (path, sha256, duration, width, height)",
+      "assets (sha256 per element)",
+      "fonts (font_id or font_file_hash per element)",
+      "operations (chain)",
+      "output_hash"
+    ],
+    "identity": "sha256 over canonical JSON of {type, parameters (asset/font paths replaced by their sha256), start, end, animation, previous stage identity, tool_versions}; no timestamps, no UUIDs, no absolute paths"
+  },
+  "work_dir": "<workspace>/.motion-graphics/<document_id>/ (non-final intermediates only; the requested output is always written directly and re-validated)",
+  "image_formats": {
+    "allowed_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg"
+    ]
+  },
+  "schema_versions": {
+    "contract": "1",
+    "request": "1",
+    "response": "1",
+    "doctor": "1"
+  },
+  "errors": {
+    "codes": [
+      "INVALID_REQUEST",
+      "INVALID_INPUT",
+      "PATH_NOT_ALLOWED",
+      "UNSUPPORTED_OPERATION",
+      "UNSUPPORTED_FORMAT",
+      "INVALID_TIME_RANGE",
+      "DEPENDENCY_ERROR",
+      "MISSING_INPUT",
+      "TOOL_ERROR",
+      "OUTPUT_ERROR",
+      "VALIDATION_ERROR",
+      "CANCELLED",
+      "INTERNAL_ERROR"
+    ],
+    "exit_codes": {
+      "INVALID_REQUEST": 2,
+      "INVALID_INPUT": 3,
+      "PATH_NOT_ALLOWED": 4,
+      "UNSUPPORTED_OPERATION": 5,
+      "UNSUPPORTED_FORMAT": 6,
+      "INVALID_TIME_RANGE": 8,
+      "DEPENDENCY_ERROR": 11,
+      "MISSING_INPUT": 7,
+      "TOOL_ERROR": 12,
+      "OUTPUT_ERROR": 13,
+      "VALIDATION_ERROR": 14,
+      "CANCELLED": 15,
+      "INTERNAL_ERROR": 16
+    },
+    "retryable": {
+      "INVALID_REQUEST": false,
+      "INVALID_INPUT": false,
+      "PATH_NOT_ALLOWED": false,
+      "UNSUPPORTED_OPERATION": false,
+      "UNSUPPORTED_FORMAT": false,
+      "INVALID_TIME_RANGE": false,
+      "DEPENDENCY_ERROR": false,
+      "MISSING_INPUT": false,
+      "TOOL_ERROR": true,
+      "OUTPUT_ERROR": false,
+      "VALIDATION_ERROR": false,
+      "CANCELLED": true,
+      "INTERNAL_ERROR": false
+    },
+    "success_exit_code": 0
+  }
+}

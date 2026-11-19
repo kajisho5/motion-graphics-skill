@@ -76,6 +76,11 @@ jobs:
           NEW_VERSION: ${{ steps.version.outputs.version }}
         run: python3 .github/scripts/bump_version.py
 
+      # contract/contract.json carries the version, so it is regenerated here (after any bump) and committed with
+      # the release: the tag's committed file is then that tag's own `contract --json` output.
+      - name: Regenerate the committed contract file
+        run: python3 contract/generate.py
+
       - name: Generate changelog entry
         env:
           NEW_VERSION: ${{ steps.version.outputs.version }}
@@ -89,7 +94,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
+          git add CHANGELOG.md contract/contract.json
           if [ "$BUMPED" = "true" ]; then
             git add pyproject.toml
           fi

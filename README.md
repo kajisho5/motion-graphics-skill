@@ -362,8 +362,14 @@ a request — those field names are rejected recursively anywhere in the request
 
 `motion-graphics contract --json` (alias `skill --json`) is generated from the same tables the code runs on
 (`model.ELEMENT_TYPES`, `model.ANIMATION_KINDS`, `errors.ERROR_TABLE`) — nothing in it is hand-maintained, so it
-can never claim support the renderer doesn't actually have. A caller (`video-production-agent` or otherwise)
-should:
+can never claim support the renderer doesn't actually have.
+
+`contract/contract.json` is the same contract committed as a file (byte for byte the `motion-graphics contract --json` output),
+so any release's contract is `git show vX.Y.Z:contract/contract.json`, with nothing installed or run. Regenerate it
+with `python contract/generate.py` after a contract change: a test fails when it is stale, and the release workflow
+regenerates it after the version bump.
+
+A caller (`video-production-agent` or otherwise) should:
 
 1. Run `contract --json` once; check `element_types`/`animations` against what the request needs, and
    `unsupported_element_types`/`unsupported_animations` for anything it must not ask for.
