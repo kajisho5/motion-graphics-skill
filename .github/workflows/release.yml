@@ -53,8 +53,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 .github/scripts/dependabot_release_labels.py
 
+      # Velisa ADR-023: pull requests labelled only chore / ci / docs / test release nothing. release-drafter's
+      # `default` cannot say "no release", so release_gate.py answers that from the merged pull requests' labels.
+      - name: Decide whether anything merged since the latest tag is releasable
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/release_gate.py
+
       - name: Resolve next version (release-drafter dry run)
         id: drafter
+        if: steps.gate.outputs.releasable != 'false'
         # v7's dry-run resolves without writing a draft. v6 with disable-releaser skipped the drafting
         # that sets tag_name, so every release after the first would have failed on an empty DRAFTED_TAG.
         uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
@@ -68,10 +77,11 @@ jobs:
         id: version
         env:
           DRAFTED_TAG: ${{ steps.drafter.outputs.tag_name }}
+          RELEASABLE: ${{ steps.gate.outputs.releasable }}
         run: python3 .github/scripts/resolve_version.py
 
       - name: Update pyproject.toml version (auto-bump path only)
-        if: steps.version.outputs.bumped == 'true'
+        if: steps.version.outputs.release != 'false' && (steps.version.outputs.bumped == 'true')
         env:
           NEW_VERSION: ${{ steps.version.outputs.version }}
         run: python3 .github/scripts/bump_version.py
@@ -79,15 +89,18 @@ jobs:
       # contract/contract.json carries the version, so it is regenerated here (after any bump) and committed with
       # the release: the tag's committed file is then that tag's own `contract --json` output.
       - name: Regenerate the committed contract file
+        if: steps.version.outputs.release != 'false'
         run: python3 contract/generate.py
 
       - name: Generate changelog entry
+        if: steps.version.outputs.release != 'false'
         env:
           NEW_VERSION: ${{ steps.version.outputs.version }}
           PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
         run: python3 .github/scripts/render_changelog.py
 
       - name: Commit changelog (and version bump if auto-bumped)
+        if: steps.version.outputs.release != 'false'
         env:
           NEW_VERSION: ${{ steps.version.outputs.version }}
           BUMPED: ${{ steps.version.outputs.bumped }}
@@ -102,10 +115,27 @@ jobs:
             echo "Nothing to commit."
           else
             git commit -m "chore(release): v${NEW_VERSION}"
+          fi
+
+      # The release commit is pushed with GITHUB_TOKEN, so no workflow runs on it on main: test it here, before
+      # it is pushed. A failure stops the release; main and the tags stay as they were (Velisa ADR-023).
+      - name: Test the release commit before pushing it
+        if: steps.version.outputs.release != 'false'
+        run: |
+          python3 -m pip install -q -e . pytest
+          python3 -m pytest -q tests/test_contract.py tests/test_contract_file.py tests/test_release_labels.py tests/test_version_source.py tests/test_release_gate.py
+
+      - name: Push the release commit
+        if: steps.version.outputs.release != 'false'
+        run: |
+          if [ "$(git rev-list --count origin/main..HEAD)" != "0" ]; then
             git push origin HEAD:main
+          else
+            echo "Nothing to push."
           fi
 
       - name: Create tag and GitHub Release
+        if: steps.version.outputs.release != 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -118,11 +148,13 @@ jobs:
           gh release create "$TAG" --title "$TAG" --notes-file /tmp/release_notes.md --target main
 
       - name: Build package
+        if: steps.version.outputs.release != 'false'
         run: |
           python -m pip install --upgrade pip build
           python -m build
 
       - name: Check for a configured PyPI token
+        if: steps.version.outputs.release != 'false'
         # `secrets` isn't a valid context inside a step `if:` condition -- only inside `env:`/`with:` etc. -- so
         # the presence check has to happen here, in a `run:` step, and be handed to the next step's `if:` as a
         # plain step output instead.
@@ -134,7 +166,7 @@ jobs:
       - name: Publish to PyPI
         # Skip publish (but keep the tag/GitHub Release above) when no token is configured, rather than failing
         # the whole release. Add a PYPI_API_TOKEN repository secret to enable this step.
-        if: steps.pypi_token.outputs.present == 'true'
+        if: steps.version.outputs.release != 'false' && (steps.pypi_token.outputs.present == 'true')
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
