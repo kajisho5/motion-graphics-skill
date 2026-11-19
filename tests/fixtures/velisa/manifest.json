@@ -1,0 +1,113 @@
+{
+  "description": "Copied from Velisa registry/ by `python3 -m registry.spec_conformance --export`; do not edit. Update by exporting again (registry/README.md, Conformance fixtures).",
+  "source": {
+    "repository": "kajisho5/Velisa",
+    "commit": "9331bba67ab654f31705efc27f5b4f42848c105f"
+  },
+  "on_frame_tolerance": 0.001,
+  "specs": {
+    "title": {
+      "spec": "docs/specs/title-and-stinger.md",
+      "schema": "schemas/title.schema.json",
+      "schema_sha256": "6b6451d9b7fcfddde3e20fe052458f555474695559827ab97e60248eadec55d7",
+      "fixtures": [
+        {
+          "path": "conformance/title/valid/24fps-unrounded.json",
+          "sha256": "4ce28f15059050e78be275c15a4c58c6dfd8662dffae5f1a64d4fb0ef66c4015",
+          "expect": "valid",
+          "fails": []
+        },
+        {
+          "path": "conformance/title/valid/hyperframes-lower-third.json",
+          "sha256": "49b96861029c6c7cec36e79ad8d53753bdc739a900676750d43cf803b4489ce5",
+          "expect": "valid",
+          "fails": []
+        },
+        {
+          "path": "conformance/title/valid/no-in-or-out-h264.json",
+          "sha256": "a42ecbe2d65aa444c88f2c7442b475b47ccd4fc3438e8f4cdc7753f4d4acdb91",
+          "expect": "valid",
+          "fails": []
+        },
+        {
+          "path": "conformance/title/valid/segments-only.json",
+          "sha256": "b33438962f82606e182fb5f7567c12ef43c8825c019fbacff8797370ccdc7f87",
+          "expect": "valid",
+          "fails": []
+        },
+        {
+          "path": "conformance/title/invalid/negative-segment.json",
+          "sha256": "0a0bdecced31b0a1695a4d8ec0d96f7a2f28b2caa87fe8af7db1f6c5cc167284",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/no-segments.json",
+          "sha256": "366d3707f4a17a767f0178e62d21ea1c43a7cf9b2f305d9757fbd112a9a6d608",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/premultiplied-misspelt.json",
+          "sha256": "3c993c4eb11d122d42265c757d5cc508ced7c64f8c57b53090511c2fc7dbd3ee",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/segment-frames-disagree.json",
+          "sha256": "df0121f274f6a405c69aa9e6ff912fd0e2edda8f5b70f5280d4722cd36ce5d60",
+          "expect": "invalid",
+          "fails": [
+            "rules"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/segment-not-whole-frames.json",
+          "sha256": "309146c85d59891c6f659001d5a6b7c2a5c8185218404f653ff08465daf71785",
+          "expect": "invalid",
+          "fails": [
+            "rules"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/segments-as-strings.json",
+          "sha256": "c1c09e44698ce88a0caad90964884cba1d2744137ba86b521859d9750fbfb899",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/segments-missing-loop.json",
+          "sha256": "603769d8d23b218f7130666befb89d4f3045e663daf033c5b7a62c58864258c9",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/sha256-uppercase.json",
+          "sha256": "2b2498092751511b2f7a2dadbbd66750c765b74f34bf7dd0176a37c6d64f69f3",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        },
+        {
+          "path": "conformance/title/invalid/wrong-schema-id.json",
+          "sha256": "a8840858cebe7dc014e0ebbfdd1604f7fe8a79780bbe95740fe860247e19e44d",
+          "expect": "invalid",
+          "fails": [
+            "schema"
+          ]
+        }
+      ]
+    }
+  }
+}

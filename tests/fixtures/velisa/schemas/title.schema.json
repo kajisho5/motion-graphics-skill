@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kajisho5/Velisa/blob/main/registry/schemas/title.schema.json",
+  "title": "velisa/title@1: metadata beside a title clip",
+  "description": "docs/specs/title-and-stinger.md, title.json. segments is read (hyperframes-skill's own scene / render --segments, motion-graphics-skill rendered_layer title_json); every other field is PROPOSED. Times are seconds on the file's own timeline. What JSON Schema cannot state (whole frames, segment_frames agreeing with segments) is checked by registry/spec_conformance.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["segments"],
+  "properties": {
+    "segments": {
+      "type": "object",
+      "description": "where the clip's IN, LOOP and OUT parts are, in seconds: whole frames, adding up to the clip's duration; in / out may be 0",
+      "additionalProperties": false,
+      "required": ["in", "loop", "out"],
+      "properties": {"in": {"$ref": "#/$defs/seconds"}, "loop": {"$ref": "#/$defs/seconds"}, "out": {"$ref": "#/$defs/seconds"}}
+    },
+    "schema": {"const": "velisa/title@1"},
+    "file": {"$ref": "#/$defs/text", "description": "the media file this describes, relative to the sidecar"},
+    "sha256": {"$ref": "#/$defs/sha256", "description": "the media file's content"},
+    "frame_rate": {"type": "string", "pattern": "^[1-9][0-9]*/[1-9][0-9]*$"},
+    "alpha": {"enum": ["straight", "premultiplied"]},
+    "segment_frames": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["in", "loop", "out"],
+      "properties": {"in": {"$ref": "#/$defs/frames"}, "loop": {"$ref": "#/$defs/frames"}, "out": {"$ref": "#/$defs/frames"}}
+    },
+    "loop_seam": {"type": "object", "description": "hyperframes-skill's measurement of the loop file, copied"},
+    "safe_area": {
+      "type": "object",
+      "description": "the box the text was kept inside, in pixels",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "text": {
+      "type": "array",
+      "description": "the text as drawn and the font size used after fitting",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "text"],
+        "properties": {
+          "role": {"$ref": "#/$defs/text"},
+          "text": {"type": "string"},
+          "lang": {"$ref": "#/$defs/text"},
+          "font": {"$ref": "#/$defs/text"},
+          "font_size": {"type": "number", "exclusiveMinimum": 0}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "seconds": {"type": "number", "minimum": 0},
+    "frames": {"type": "integer", "minimum": 0}
+  }
+}

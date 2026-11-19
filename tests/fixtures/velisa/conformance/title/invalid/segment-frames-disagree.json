@@ -1,0 +1,13 @@
+{
+  "frame_rate": "30/1",
+  "segments": {
+    "in": 0.5,
+    "loop": 1,
+    "out": 0.5
+  },
+  "segment_frames": {
+    "in": 15,
+    "loop": 31,
+    "out": 15
+  }
+}
