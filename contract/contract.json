@@ -101,7 +101,7 @@
     },
     {
       "id": "motion_graphics.overlay",
-      "lifecycle": "EXPERIMENTAL",
+      "lifecycle": "STABLE",
       "tool_id": "motion-graphics/run",
       "element_type": "image_overlay"
     },
@@ -113,7 +113,7 @@
     },
     {
       "id": "motion_graphics.lower_third",
-      "lifecycle": "EXPERIMENTAL",
+      "lifecycle": "STABLE",
       "tool_id": "motion-graphics/run",
       "element_type": "lower_third"
     },
@@ -149,13 +149,13 @@
     },
     {
       "id": "motion_graphics.text_overlay",
-      "lifecycle": "EXPERIMENTAL",
+      "lifecycle": "STABLE",
       "tool_id": "motion-graphics/run",
       "element_type": "text_overlay"
     },
     {
       "id": "motion_graphics.title_card",
-      "lifecycle": "EXPERIMENTAL",
+      "lifecycle": "STABLE",
       "tool_id": "motion-graphics/run",
       "element_type": "title"
     },

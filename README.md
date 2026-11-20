@@ -405,6 +405,32 @@ and derived from `model.ELEMENT_TYPES`; see `docs/decisions.md` ADR-10.
 `range_of: "contract_version"`) and the ffmpeg-skill tools used. It is a declaration for the registry;
 compatibility is still decided by the flags present (ADR-18).
 
+## Compatibility promise (1.0)
+
+From 1.0.0 the release version follows the contract (ADR-35, Velisa ADR-031). `si contract-diff` on every pull
+request says whether a change is breaking, additive or neither.
+
+- **Covered (`STABLE`):**
+  - the element types `title` (`motion_graphics.title_card`), `lower_third`, `text_overlay` and `image_overlay`
+    (`motion_graphics.overlay`), the four whose capability ids the OS capability matrix assigns;
+  - the tool `motion-graphics/run` and its `validate` / `plan` steps as they serve them;
+  - the request, response and error shapes, and the error codes.
+
+  A breaking change to any of these ships only in a major release (2.0.0). An addition ships in a minor release,
+  and a release with no contract change is a patch.
+- **Experimental (`EXPERIMENTAL`):** every other element type. These may still change in a minor release, and such a
+  change is named in its CHANGELOG entry:
+  - `bug`, `chapter`, `progress`, `countdown`, `sticker`, `hook` and `meme`, whose capability ids are this
+    repository's provisional ones;
+  - `shape` and `video_overlay`, still under review in issue #10;
+  - `rendered_layer` and `logo`, the newest.
+
+  An element type is promoted to `STABLE` in any release, with no shape change: `provides[].lifecycle` in
+  `contract/contract.json` says which is which.
+- **Deprecation:** a `STABLE` element type or parameter is first marked `DEPRECATED` (a parameter in its
+  description), with its replacement named here and in the CHANGELOG. It keeps working for at least one more
+  minor release and 30 days, and only a major release removes it.
+
 ## Security
 
 - No `shell=True`, no arbitrary executable, no arbitrary ffmpeg args/filters, no command injection, no
