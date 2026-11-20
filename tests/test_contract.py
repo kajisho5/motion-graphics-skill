@@ -173,3 +173,12 @@ def test_contract_video_overlay_element_type_present_with_expected_tool():
 def test_contract_run_response_documents_warnings_key():
     c = skill_contract()
     assert "warnings" in c["response"]["success"]["run"]
+
+
+def test_provides_lifecycle_is_the_1_0_promise():
+    """ADR-35: the four element types with an OS-assigned capability id are STABLE; every provisional id stays EXPERIMENTAL."""
+    lifecycles = {p["element_type"]: p["lifecycle"] for p in skill_contract()["provides"]}
+    stable = {e for e, lc in lifecycles.items() if lc == "STABLE"}
+    assert stable == {"title", "lower_third", "text_overlay", "image_overlay"}
+    assert set(lifecycles.values()) == {"STABLE", "EXPERIMENTAL"}
+

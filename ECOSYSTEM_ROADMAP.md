@@ -71,6 +71,9 @@ Agent wires all 12 elements with every parameter, first from a pinned 0.2.8 cont
   - Why: one brand file drives this skill and the other renderers alike（なぜ要るか：同じブランドファイルを全レンダラーで共有できる）
   - Done when: a `kit@1` fixture and the equivalent `theme@1` render the same document to the same pixels; the contrast report runs on the kit's colours
   - Done ([#47](https://github.com/kajisho5/motion-graphics-skill/pull/47), ADR-31): `options.kit` (a kit@1 or plain brand.json file) maps onto `theme@1` with all four colour roles, else onto `brand_kit` with the roles it has; only what the kit states is passed on, and every key with no counterpart is listed in `response.kit.unmapped` with the reason and warned; the mapped theme is `response.kit.theme`. `tests/test_kit.py` renders `tests/fixtures/kit_lagoon.json` and the equivalent `theme@1` to the same decoded frames with the same contrast report on the kit's colours
+- [x] **15. 1.0.0: a stated compatibility promise** — `title`, `lower_third`, `text_overlay` and `image_overlay` are `STABLE` in `provides[]`, and a breaking change to them ships only in a major release. The provisional ids and the newer elements stay `EXPERIMENTAL`. A `STABLE` element is deprecated for one minor release and 30 days before it is removed (Velisa ADR-031, [#60](https://github.com/kajisho5/motion-graphics-skill/pull/60))
+  - Done when: v1.0.0 is tagged; the README states the promise; video-production-agent re-pins 1.0.0 with its gate taking `1.0.`
+  - Done (ADR-35): lifecycle promotion only (`si contract-diff`: none); released through the `major` label
 
 ## Boundaries
 

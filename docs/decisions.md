@@ -1105,3 +1105,31 @@ The release job now commits and tags locally, runs `tests/test_contract.py`, `te
 `.github/scripts/release_gate.py` lets a push release only when a pull request merged since the latest tag carries a release-level label or no label at all. The release-level labels are the ones `.github/release-drafter.yml`'s `version-resolver` maps to a bump. A pull request labelled only chore, ci, documentation, docs, test or similar releases nothing. This is imagemagick-skill's rule. release-drafter's `default` accepts only major, minor or patch, so the gate runs first, and the maintenance labels no longer map to a patch.
 
 A version bumped by hand in a pull request is released whatever its labels. The contract is unchanged.
+
+## ADR-35 1.0.0: the four element types with an OS-assigned capability id are STABLE; breaking changes to them ship only in a major release (Velisa ADR-031, D46)
+
+2026-11-20.
+
+Velisa ADR-031 ranked the 0.x Skills by stability, and this skill came second:
+
+- 31 releases;
+- `si contract-diff` gave `none` between its last measured tags, and every recent pull request was `contract:none`;
+- no open roadmap step;
+- open issues limited to documentation and maintenance follow-ups (#53).
+
+`provides[].lifecycle` is `STABLE` for `title`, `lower_third`, `text_overlay` and `image_overlay`. Their capability ids (`motion_graphics.title_card`, `.lower_third`, `.text_overlay`, `.overlay`) are the ones the OS capability matrix assigns, so a registry can rely on them.
+
+Every other element type stays `EXPERIMENTAL`:
+
+- `bug`, `chapter`, `progress`, `countdown`, `sticker`, `hook` and `meme`: their ids are this repository's provisional choices (ADR-10 to ADR-19), and a later OS assignment may rename them;
+- `shape` and `video_overlay`: issue #10 re-opens whether `shape` should delegate differently, and who owns picture-in-picture and chroma key;
+- `rendered_layer` and `logo`: added on 2026-11-07.
+
+The README's "Compatibility promise (1.0)" section is the promise: what it covers, what stays experimental, and the deprecation rule.
+
+The contract change is a lifecycle promotion only. `si contract-diff` classifies it `none`, with rule `lifecycle-promoted` four times. `contract_version` is unchanged.
+
+The version goes 0.4.5 -> 1.0.0 through the existing flow: the pull request carries the `major` label, which release-drafter's `version-resolver` maps to a major bump and `release_gate.py` counts as release-level. No workflow change was needed.
+
+Tests: `tests/test_contract.py::test_provides_lifecycle_is_the_1_0_promise`.
+

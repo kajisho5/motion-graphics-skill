@@ -52,8 +52,17 @@ CAPABILITY_IDS: Dict[str, str] = {
 }
 
 
+# The 1.0 compatibility promise (ADR-35, Velisa ADR-031): a STABLE capability changes in a breaking way only in a major
+# release. STABLE are the four element types whose ids the OS capability matrix assigns (title_card, lower_third,
+# text_overlay, overlay). Every id this repository chose provisionally stays EXPERIMENTAL and may still change in a
+# minor release, and so does every element still under review (shape and video_overlay, issue #10; rendered_layer and
+# logo, added 2026-11-07).
+STABLE_ELEMENT_TYPES = frozenset({"title", "lower_third", "text_overlay", "image_overlay"})
+
+
 def capability_provides() -> List[Dict[str, str]]:
-    return [{"id": CAPABILITY_IDS[etype], "lifecycle": "EXPERIMENTAL", "tool_id": f"{SKILL_ID}/run", "element_type": etype}
+    return [{"id": CAPABILITY_IDS[etype], "lifecycle": "STABLE" if etype in STABLE_ELEMENT_TYPES else "EXPERIMENTAL",
+             "tool_id": f"{SKILL_ID}/run", "element_type": etype}
             for etype in sorted(ELEMENT_TYPES)]
 
 
