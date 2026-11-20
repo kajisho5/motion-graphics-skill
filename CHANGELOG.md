@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.0 — 2026-11-20
+
+- feat!: 1.0.0 — the four element types with OS capability ids are STABLE; breaking changes to them only in a major release (ADR-35) (#60) (9ed3dcf)
+
 ## v0.4.5 — 2026-11-20
 
 - build(deps): Bump release-drafter/release-drafter/autolabeler (#58) (21750c8)
