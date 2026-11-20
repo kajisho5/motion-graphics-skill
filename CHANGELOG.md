@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.5 — 2026-11-20
+
+- build(deps): Bump release-drafter/release-drafter/autolabeler (#58) (21750c8)
+- test: the title.json reader against the Velisa conformance fixtures (#57) (fa3e97c)
+- ci: Velisa's reusable changelog-check/release-guard; dependencies PRs release a patch (D36, D37) (#56) (e91567e)
+
 ## v0.4.4 — 2026-11-19
 
 - ci(release): give the release test step an ffmpeg-skill checkout (#55) (c5aae28)
