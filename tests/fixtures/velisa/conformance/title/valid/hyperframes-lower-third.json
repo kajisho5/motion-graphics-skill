@@ -1,0 +1,41 @@
+{
+  "schema": "velisa/title@1",
+  "file": "lt.mov",
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "frame_rate": "30/1",
+  "alpha": "straight",
+  "segments": {
+    "in": 0.5,
+    "loop": 1,
+    "out": 0.5
+  },
+  "segment_frames": {
+    "in": 15,
+    "loop": 30,
+    "out": 15
+  },
+  "loop_seam": {
+    "measured": true,
+    "frames": 30,
+    "wrap_diff": 0.4,
+    "max_step_diff": 0.6,
+    "mean_step_diff": 0.3,
+    "tolerance": 2,
+    "ok": true
+  },
+  "safe_area": {
+    "x": 120,
+    "y": 800,
+    "width": 1100,
+    "height": 154
+  },
+  "text": [
+    {
+      "role": "name",
+      "text": "Ada Lovelace",
+      "lang": "en",
+      "font": "sans-serif",
+      "font_size": 56
+    }
+  ]
+}

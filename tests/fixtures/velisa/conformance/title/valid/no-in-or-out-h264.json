@@ -1,0 +1,15 @@
+{
+  "schema": "velisa/title@1",
+  "file": "strap.mp4",
+  "frame_rate": "24/1",
+  "segments": {
+    "in": 0,
+    "loop": 2,
+    "out": 0
+  },
+  "segment_frames": {
+    "in": 0,
+    "loop": 48,
+    "out": 0
+  }
+}
